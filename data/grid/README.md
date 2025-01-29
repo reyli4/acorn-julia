@@ -8,24 +8,21 @@ This directory holds the NYS grid network information. These files are the resul
 - As far as I can tell, only the bus network connections and lat/lon locations are used. The other information does not enter into the OPF analysis.
 
 Bus Data Format:
-    1   bus number (positive integer)
-    2   bus type
-            PQ bus          = 1
-            PV bus          = 2
-            reference bus   = 3
-            isolated bus    = 4
-    3   Pd, real power demand (MW)
-    4   Qd, reactive power demand (MVAr)
-    5   Gs, shunt conductance (MW demanded at V = 1.0 p.u.)
-    6   Bs, shunt susceptance (MVAr injected at V = 1.0 p.u.)
-    7   area number, (positive integer)
-    8   Vm, voltage magnitude (p.u.)
-    9   Va, voltage angle (degrees)
-(-)     (bus name)
-    10  baseKV, base voltage (kV)
-    11  zone, loss zone (positive integer)
-(+) 12  maxVm, maximum voltage magnitude (p.u.)
-(+) 13  minVm, minimum voltage magnitude (p.u.)
+| Column | Description | Notes |
+|--------|-------------|-------|
+| 1 | Bus number | Positive integer |
+| 2 | Bus type | 1 = PQ bus, 2 = PV bus, 3 = Reference bus, 4 = Isolated bus |
+| 3 | Pd | Real power demand (MW) |
+| 4 | Qd | Reactive power demand (MVAr) |
+| 5 | Gs | Shunt conductance (MW demanded at V = 1.0 p.u.) |
+| 6 | Bs | Shunt susceptance (MVAr injected at V = 1.0 p.u.) |
+| 7 | Area number | Positive integer |
+| 8 | Vm | Voltage magnitude (p.u.) |
+| 9 | Va | Voltage angle (degrees) |
+| 10 | baseKV | Base voltage (kV) |
+| 11 | Zone | Loss zone (positive integer) |
+| 12 | maxVm | Maximum voltage magnitude (p.u.) |
+| 13 | minVm | Minimum voltage magnitude (p.u.) |
 
 ### Line information
 - `branch_prop_boyuan.csv`: Branch properties from [Bo's python repo](https://github.com/boyuan276/NYgrid-python)
@@ -35,29 +32,21 @@ Bus Data Format:
 - Original data taken from NPCC 140-bus system as verified [here](https://github.com/CURENT/andes/tree/master/andes/cases), plus some additional data related to flow limits. 
 
 Branch Data Format:
-    1   f, from bus number
-    2   t, to bus number
-(-)     (circuit identifier)
-    3   r, resistance (p.u.)
-    4   x, reactance (p.u.)
-    5   b, total line charging susceptance (p.u.)
-    6   rateA, MVA rating A (long term rating)
-    7   rateB, MVA rating B (short term rating)
-    8   rateC, MVA rating C (emergency rating)
-    9   ratio, transformer off nominal turns ratio ( = 0 for lines )
-        (taps at 'from' bus, impedance at 'to' bus,
-         i.e. if r = x = 0, then ratio = Vf / Vt)
-    10  angle, transformer phase shift angle (degrees), positive => delay
-(-)     (Gf, shunt conductance at from bus p.u.)
-(-)     (Bf, shunt susceptance at from bus p.u.)
-(-)     (Gt, shunt conductance at to bus p.u.)
-(-)     (Bt, shunt susceptance at to bus p.u.)
-    11  initial branch status, 1 - in service, 0 - out of service
-(2) 12  minimum angle difference, angle(Vf) - angle(Vt) (degrees)
-(2) 13  maximum angle difference, angle(Vf) - angle(Vt) (degrees)
-        (The voltage angle difference is taken to be unbounded below
-         if ANGMIN < -360 and unbounded above if ANGMAX > 360.
-         If both parameters are zero, it is unconstrained.)
+| Column | Description | Notes |
+|--------|-------------|-------|
+| 1 | From bus number | Positive integer |
+| 2 | To bus number | Positive integer |
+| 3 | r | Resistance (p.u.) |
+| 4 | x | Reactance (p.u.) |
+| 5 | b | Total line charging susceptance (p.u.) |
+| 6 | rateA | MVA rating A (long term rating) |
+| 7 | rateB | MVA rating B (short term rating) |
+| 8 | rateC | MVA rating C (emergency rating) |
+| 9 | ratio | Transformer off nominal turns ratio (= 0 for lines). Taps at 'from' bus, impedance at 'to' bus. If r = x = 0, then ratio = Vf / Vt |
+| 10 | angle | Transformer phase shift angle (degrees), positive => delay |
+| 11 | status | Initial branch status, 1 - in service, 0 - out of service |
+| 12 | ANGMIN | Minimum angle difference, angle(Vf) - angle(Vt) (degrees) |
+| 13 | ANGMAX | Maximum angle difference, angle(Vf) - angle(Vt) (degrees). Angle difference is unbounded below if ANGMIN < -360 and above if ANGMAX > 360. If both are zero, it is unconstrained. |
 
 ### Generator information
 
@@ -67,32 +56,26 @@ Branch Data Format:
 - These two csv files don't really agree -- some generators can be matched across the files (mainly hydro and nuclear) but even then there are differences in generation parameters. The import "generators" do not match. 
 
 Generator Data Format:
-    1   bus number
-(-)     (machine identifier, 0-9, A-Z)
-    2   Pg, real power output (MW)
-    3   Qg, reactive power output (MVAr)
-    4   Qmax, maximum reactive power output (MVAr)
-    5   Qmin, minimum reactive power output (MVAr)
-    6   Vg, voltage magnitude setpoint (p.u.)
-(-)     (remote controlled bus index)
-    7   mBase, total MVA base of this machine, defaults to baseMVA
-(-)     (machine impedance, p.u. on mBase)
-(-)     (step up transformer impedance, p.u. on mBase)
-(-)     (step up transformer off nominal turns ratio)
-    8   status,  >  0 - machine in service
-                 <= 0 - machine out of service
-(-)     (% of total VAr's to come from this gen in order to hold V at
-            remote bus controlled by several generators)
-    9   Pmax, maximum real power output (MW)
-    10  Pmin, minimum real power output (MW)
-(2) 11  Pc1, lower real power output of PQ capability curve (MW)
-(2) 12  Pc2, upper real power output of PQ capability curve (MW)
-(2) 13  Qc1min, minimum reactive power output at Pc1 (MVAr)
-(2) 14  Qc1max, maximum reactive power output at Pc1 (MVAr)
-(2) 15  Qc2min, minimum reactive power output at Pc2 (MVAr)
-(2) 16  Qc2max, maximum reactive power output at Pc2 (MVAr)
-(2) 17  ramp rate for load following/AGC (MW/min)
-(2) 18  ramp rate for 10 minute reserves (MW)
-(2) 19  ramp rate for 30 minute reserves (MW)
-(2) 20  ramp rate for reactive power (2 sec timescale) (MVAr/min)
-(2) 21  APF, area participation factor
+| Column | Field | Description | Notes |
+|--------|-------|-------------|--------|
+| 1 | bus number | Bus number | Positive integer |
+| 2 | Pg | Real power output | MW |
+| 3 | Qg | Reactive power output | MVAr |
+| 4 | Qmax | Maximum reactive power output | MVAr |
+| 5 | Qmin | Minimum reactive power output | MVAr |
+| 6 | Vg | Voltage magnitude setpoint | p.u. |
+| 7 | mBase | Total MVA base of machine | Defaults to baseMVA |
+| 8 | status | Machine service status | > 0: in service, ≤ 0: out of service |
+| 9 | Pmax | Maximum real power output | MW |
+| 10 | Pmin | Minimum real power output | MW |
+| 11 | Pc1 | Lower real power output of PQ capability curve | MW |
+| 12 | Pc2 | Upper real power output of PQ capability curve | MW |
+| 13 | Qc1min | Minimum reactive power output at Pc1 | MVAr |
+| 14 | Qc1max | Maximum reactive power output at Pc1 | MVAr |
+| 15 | Qc2min | Minimum reactive power output at Pc2 | MVAr |
+| 16 | Qc2max | Maximum reactive power output at Pc2 | MVAr |
+| 17 | ramp rate | Load following/AGC ramp rate | MW/min |
+| 18 | ramp rate | 10 minute reserves ramp rate | MW |
+| 19 | ramp rate | 30 minute reserves ramp rate | MW |
+| 20 | ramp rate | Reactive power ramp rate (2 sec timescale) | MVAr/min |
+| 21 | APF | Area participation factor | - |
