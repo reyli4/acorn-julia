@@ -6,7 +6,33 @@ using CSV
 using Dates
 using Statistics
 using Plots
-using SkipNan
+
+"""
+This script downloads and processes historical load data from NYISO. The data is
+downloaded in CSV format and processed to aggregate the data into hourly averages
+and store the results in a CSV file. This script is self contained and does not 
+require any web-based interactions. 
+
+Assumptions:
+- Load zones seem to change over time, from NYC_LongIsland to NYC and LongIsland. We assume
+  that the NYC_LongIsland zone can be split into NYC and LongIsland, using a ratio of 2.5:1.
+"""
+
+###########################
+## Preliminaries
+###########################
+# Define project root directory
+base_dir = dirname(dirname(@__FILE__))
+
+# Define the base URL and destination folder
+base_url = "http://mis.nyiso.com/public/csv/pal/"
+data_folder = "$base_dir/data/nyiso/historical_load"
+
+# Create the relevant folders
+isdir(data_folder) || mkpath(data_folder)
+isdir("$data_folder/zipped") || mkpath("$data_folder/zipped")
+isdir("$data_folder/extracted") || mkpath("$data_folder/extracted")
+isdir("$data_folder/combined") || mkpath("$data_folder/combined")
 
 ###########################
 ## User-defined functions
@@ -80,22 +106,6 @@ function process_load_file(file_path::String)
 end
 
 ###########################
-## Preliminaries
-###########################
-# Define project root directory
-base_dir = dirname(dirname(@__FILE__))
-
-# Define the base URL and destination folder
-base_url = "http://mis.nyiso.com/public/csv/pal/"
-data_folder = "$base_dir/data/nyiso/historical_load"
-
-# Create the relevant folders
-isdir(data_folder) || mkpath(data_folder)
-isdir("$data_folder/zipped") || mkpath("$data_folder/zipped")
-isdir("$data_folder/extracted") || mkpath("$data_folder/extracted")
-isdir("$data_folder/combined") || mkpath("$data_folder/combined")
-
-###########################
 ## Download and unzip data
 ###########################
 # Loop over each year and month
@@ -154,7 +164,9 @@ end
 combined_file_path = "$data_folder/combined/historical_load.csv"
 CSV.write(combined_file_path, combined_df)
 
-# Plot the historical loads
+#######################################
+# Plot the historical loads to check
+#####################################
 # Load the combined CSV file
 df = CSV.read("$data_folder/combined/historical_load.csv", DataFrame)
 
@@ -162,9 +174,14 @@ df = CSV.read("$data_folder/combined/historical_load.csv", DataFrame)
 df = combine(groupby(df, "HourlyTime"), :Load_MW => (x -> sum(x) / 1000) => :Load_GW)
 
 # Add new columns for day, month, and hour
+df[!, "Year"] = year.(df.HourlyTime)
 df[!, "Month"] = month.(df.HourlyTime)
 df[!, "Day"] = day.(df.HourlyTime)
-df[!, "Hour"] = hour.(hourly_totals.HourlyTime)
+df[!, "Hour"] = hour.(df.HourlyTime)
+
+# Plot 2016 to compare to Kenji's paper SI
+df_2016 = filter!(row -> row.Year == 2016, df)
+plot(df_2016.HourlyTime, df_2016.Load_GW, ylabel="Total Load (GW)", linewidth=1, legend=false)
 
 # Calculate percentiles for each day, month, and hour
 percentiles = combine(groupby(df, ["Day", "Month", "Hour"]),
