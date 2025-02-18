@@ -4,6 +4,7 @@ using CSV
 using DataFrames
 using MAT
 using LinearAlgebra
+using MathOptInterface
 
 include("./utils.jl")
 
@@ -32,9 +33,9 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     networkcon = true
 
     # Read grid data
-    gen_prop = CSV.read("$(data_dir)/grid/gen_prop_$(gen_prop_name).csv", DataFrame, header=true)
-    bus_prop = CSV.read("$(data_dir)/grid/bus_prop_$(bus_prop_name).csv", DataFrame, header=true)
-    branch_prop = CSV.read("$(data_dir)/grid/branch_prop_$(branch_prop_name).csv", DataFrame, header=true)
+    gen_prop = CSV.read("$(data_dir)/grid/gen_prop_$(gen_prop_name).csv", DataFrame, header=true, stringtype=String)
+    bus_prop = CSV.read("$(data_dir)/grid/bus_prop_$(bus_prop_name).csv", DataFrame, header=true, stringtype=String)
+    branch_prop = CSV.read("$(data_dir)/grid/branch_prop_$(branch_prop_name).csv", DataFrame, header=true, stringtype=String)
 
     bus_ids = bus_prop[:, 1]
 
@@ -58,27 +59,19 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     wind_gen, wind_bus_ids = get_wind(year, wind_scalar)
     gen_prop = add_wind_generators(gen_prop, wind_bus_ids)
 
-    # Additional generators for this study (UPDATE THIS!!)
-    cleanpath1 = similar(gen_prop, 1)
-    cleanpath1[1, :] = reshape([36, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "NYCleanPath"], 1, :) # NY Clean Path
-
-    cleanpath2 = similar(gen_prop, 1)
-    cleanpath2[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "NYCleanPath"], 1, :) # NY Clean Path
-
-    CHPexpress1 = similar(gen_prop, 1)
-    CHPexpress1[1, :] = reshape([15, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "CHPexpress"], 1, :) # Champlain Hudson Power Express
-
-    CHPexpress2 = similar(gen_prop, 1)
-    CHPexpress2[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "CHPexpress"], 1, :) # Champlain Hudson Power Express
-
-    HQgen = similar(gen_prop, 1)
-    HQgen[1, :] = reshape([15, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HQ"], 1, :) # HydroQuebec
-
-    gen_prop = vcat(gen_prop, HQgen, cleanpath1, cleanpath2, CHPexpress1, CHPexpress2)
+    # HVDC generators
+    gen_prop = add_hvdc(gen_prop)
 
     # Get generator limits
     g_max = repeat(gen_prop[:, "PMAX"], 1, nt) # Maximum real power output (MW)
     g_min = repeat(gen_prop[:, "PMIN"], 1, nt) # Minimum real power output (MW)
+
+    # Update for renewables
+    wind_idx = findall(x -> x == "Wind", gen_prop[:, "UNIT_TYPE"])
+    g_max[wind_idx, :] = wind_gen[:, 1:nt]
+
+    solar_upv_idx = findall(x -> x == "SolarUPV", gen_prop[:, "UNIT_TYPE"])
+    g_max[solar_upv_idx, :] = solar_upv_gen[:, 1:nt]
 
     # Get generator ramp rates
     ramp_down = max.(repeat(gen_prop[:, "RAMP_30"], 1, nt) .* 2, repeat(gen_prop[:, "PMAX"], 1, nt)) # max of RAMP_30, PMAX??
@@ -92,19 +85,16 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     if_lim_up, if_lim_dn, if_lim_map = get_if_lims(year, n_if_lims)
 
     # Branch limits
-    branch_lims = repeat(branch_prop[:, "RATE_A"], 1, nt)
-    branch_lims[branch_lims.==0] .= 99999
+    branch_lims = repeat(Float64.(branch_prop[:, "RATE_A"]), 1, nt)
+    branch_lims[branch_lims.==0] .= 99999.0
 
     # Storage
     charge_cap, storage_cap, storage_bus_ids = get_storage(batt_scalar, batt_duration)
 
     ########## Optimization ##############
     n_gen = size(gen_prop, 1)
-    println(n_gen)
     n_bus = size(bus_prop, 1)
-    println(n_bus)
     n_branch = size(branch_prop, 1)
-    println(n_branch)
 
     model = Model(Gurobi.Optimizer)
 
@@ -119,44 +109,46 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
 
     ## Constraints 
     # Branch flow limits and power flow equations
-    ################ UPDATE THIS -> need to get idx from F_BUS, T_BUS
     for l in 1:n_branch
+        idx_from_bus = findfirst(x -> x == branch_prop[l, "F_BUS"], bus_prop[:, "BUS_I"])
+        idx_to_bus = findfirst(x -> x == branch_prop[l, "T_BUS"], bus_prop[:, "BUS_I"])
         @constraint(model, -branch_lims[l, :] .<= flow[l, :] .<= branch_lims[l, :])  # Branch flow limits
         @constraint(model, flow[l, :] .== (100 / branch_prop[l, "BR_X"]) .*  # DC power flow equations
-                                          (bus_angle[Int(branch_prop[l, "F_BUS"]), :] .-
-                                           bus_angle[Int(branch_prop[l, "T_BUS"]), :]))
+                                          (bus_angle[idx_from_bus, :] .-
+                                           bus_angle[idx_to_bus, :]))
     end
 
     # Node balance and phase angle constraints
     for idx in 1:n_bus
+        bus_id = bus_ids[idx]
         if bus_prop[idx, "BUS_TYPE"] != 3  # Not the slack bus
-            if idx in storage_bus_ids
+            if bus_id in storage_bus_ids
                 # Node balance with storage devices
-                storage_idx = findfirst(==(idx), storage_bus_ids)
-                @constraint(model, loads[idx, :] .==
-                                   -sum(flow[l, :] for l in findall(x -> x == idx, branch_prop[:, "F_BUS"])) .+
-                                   sum(flow[l, :] for l in findall(x -> x == idx, branch_prop[:, "T_BUS"])) .+
-                                   sum(pg[l, :] for l in findall(x -> x == idx, gen_prop[:, "GEN_BUS"])) .+
-                                   discharge[storage_idx, :] .-
-                                   charge[storage_idx, :] .+
-                                   load_shedding[idx, :])
+                storage_idx = findfirst(==(bus_id), storage_bus_ids)
+                @constraint(model, load[idx, 1:nt] .==
+                                   -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "F_BUS"])) .+
+                                   sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "T_BUS"])) .+
+                                   sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, gen_prop[:, "GEN_BUS"])) .+
+                                   discharge[storage_idx, 1:nt] .-
+                                   charge[storage_idx, 1:nt] .+
+                                   load_shedding[idx, 1:nt])
             else
                 # Node balance without storage devices
-                @constraint(model, loads[idx, :] .==
-                                   -sum(flow[l, :] for l in findall(x -> x == idx, branch_prop[:, "F_BUS"])) .+
-                                   sum(flow[l, :] for l in findall(x -> x == idx, branch_prop[:, "T_BUS"])) .+
-                                   sum(pg[l, :] for l in findall(x -> x == idx, gen_prop[:, "GEN_BUS"])) .+
-                                   load_shedding[idx, :])
+                @constraint(model, load[idx, 1:nt] .==
+                                   -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "F_BUS"])) .+
+                                   sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "T_BUS"])) .+
+                                   sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, gen_prop[:, "GEN_BUS"])) .+
+                                   load_shedding[idx, 1:nt])
             end
-            @constraint(model, -2 * pi .<= bus_angle[idx, :] .<= 2 * pi)  # Voltage angle limits
+            @constraint(model, -2 * pi .<= bus_angle[idx, 1:nt] .<= 2 * pi)  # Voltage angle limits
         else  # Slack bus
             # Node balance for slack bus
-            @constraint(model, loads[idx, :] .==
-                               -sum(flow[l, :] for l in findall(x -> x == idx, branch_prop[:, "F_BUS"])) .+
-                               sum(flow[l, :] for l in findall(x -> x == idx, branch_prop[:, "T_BUS"])) .+
-                               sum(pg[l, :] for l in findall(x -> x == idx, gen_prop[:, "GEN_BUS"])) .+
-                               load_shedding[idx, :])
-            @constraint(model, bus_angle[idx, :] .== 0.2979 / 180 * pi)  # Fix voltage angle at slack bus
+            @constraint(model, load[idx, 1:nt] .==
+                               -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "F_BUS"])) .+
+                               sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "T_BUS"])) .+
+                               sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, gen_prop[:, "GEN_BUS"])) .+
+                               load_shedding[idx, 1:nt])
+            @constraint(model, bus_angle[idx, 1:nt] .== 0.2979 / 180 * pi)  # Fix voltage angle at slack bus
         end
     end
 
@@ -167,10 +159,10 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     # Battery state dynamics for all time steps
     for t in 1:nt
         # Battery state dynamics for all but the last storage bus
-        @constraint(model, batt_state[1:end-1, t+1] .== batt_state[1:end-1, t] .+ sqrt(storage_eff) .* charge[1:end-1, t] .- (1 / sqrt(eff)) .* discharge[1:end-1, t])
+        @constraint(model, batt_state[1:end-1, t+1] .== batt_state[1:end-1, t] .+ sqrt(storage_eff) .* charge[1:end-1, t] .- (1 / sqrt(storage_eff)) .* discharge[1:end-1, t])
 
         # Battery state dynamics Gilboa
-        @constraint(model, batt_state[end, t+1] .== batt_state[end, t] .+ sqrt(gilboa_eff) .* charge[end, t] .- (1 / sqrt(effGilboa)) .* discharge[end, t])
+        @constraint(model, batt_state[end, t+1] .== batt_state[end, t] .+ sqrt(gilboa_eff) .* charge[end, t] .- (1 / sqrt(gilboa_eff)) .* discharge[end, t])
     end
 
     # Battery capacity constraints
@@ -194,7 +186,7 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
         idx_abs = abs.(idx)
         flow_sum = [sum(idx_signs .* flow[Int.(idx_abs), t]) for t in 1:nt]
         # Constraint
-        @constraint(model, if_lim_dn[i, 1:nt-1] .<= flow_sum .<= if_lim_up[i, 1:nt-1])
+        @constraint(model, if_lim_dn[i, 1:nt] .<= flow_sum .<= if_lim_up[i, 1:nt])
     end
 
     # Nuclear generators always fully dispatch
@@ -232,32 +224,39 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     @constraint(model, g_min .<= pg .<= g_max)
 
     # HVDC lines (modelled as two dummy generators on each side of the lines)
-    @constraint(model, pg[end-12, :] .== -pg[end-8, :])
-    @constraint(model, pg[end-11, :] .== -pg[end-7, :])
-    @constraint(model, pg[end-10, :] .== -pg[end-6, :])
-    @constraint(model, pg[end-9, :] .== -pg[end-5, :])
-    @constraint(model, pg[end-3, :] .== -pg[end-2, :])
-    @constraint(model, pg[end-1, :] .== -pg[end, :])
-    @constraint(model, pg[end-4, :] .== -pg[end-1, :])
+    csc_idx = findall(x -> x == "HVDC_CSC", gen_prop[!, "UNIT_TYPE"])
+    @constraint(model, pg[csc_idx[1], :] .== -pg[csc_idx[2], :]) # SC+NPX1385
 
-    if !newHVDC
-        @constraint(model, pg[end-3, :] .== 0)
-        @constraint(model, pg[end-1, :] .== 0)
-    end
+    neptune_idx = findall(x -> x == "HVDC_Neptune", gen_prop[!, "UNIT_TYPE"])
+    @constraint(model, pg[neptune_idx[1], :] .== -pg[neptune_idx[2], :]) # Neptune
+
+    vft_idx = findall(x -> x == "HVDC_VFT", gen_prop[!, "UNIT_TYPE"])
+    @constraint(model, pg[vft_idx[1], :] .== -pg[vft_idx[2], :]) # VFT
+
+    htp_idx = findall(x -> x == "HVDC_HTP", gen_prop[!, "UNIT_TYPE"])
+    @constraint(model, pg[htp_idx[1], :] .== -pg[htp_idx[2], :]) # HTP
+
+    clean_path_idx = findall(x -> x == "HVDC_NYCleanPath", gen_prop[!, "UNIT_TYPE"])
+    @constraint(model, pg[clean_path_idx[1], :] .== -pg[clean_path_idx[2], :]) # CleanPath
+
+    chp_express_idx = findall(x -> x == "HVDC_CHPexpress", gen_prop[!, "UNIT_TYPE"])
+    @constraint(model, pg[chp_express_idx[1], :] .== -pg[chp_express_idx[2], :]) # CHP Express
+
+    # @constraint(model, pg[end-4, :] .== -pg[end-1, :]) # ?????
 
     # Generator ramping constraints
     @constraint(model, -ramp_down[:, 2:nt] .<= pg[:, 2:nt] .- pg[:, 1:nt-1] .<= ramp_up[:, 2:nt])
 
     # Load shedding constraints
-    @constraint(model, 0.0 .<= load_shedding .<= max.(loads, 0))
+    @constraint(model, 0.0 .<= load_shedding .<= max.(load, 0))
 
     # Extract generation for wind and calculate curtailment
-    wind_idx = findall(x -> x == "Wind", gen_prop[!, "GEN_TYPE"])
-    wg = pg[wind_indices, :]
+    wind_idx = findall(x -> x == "Wind", gen_prop[!, "UNIT_TYPE"])
+    wg = pg[wind_idx, :]
     wc = wind_gen .- wg
 
     # Extract generation for utility-scale solar (UPV) and calculate curtailment
-    solar_idx = findall(x -> x == "SolarUPV", gen_prop[!, "GEN_TYPE"])
+    solar_idx = findall(x -> x == "SolarUPV", gen_prop[!, "UNIT_TYPE"])
     sg = pg[solar_idx, :]
     sc = solar_upv_gen .- sg
 

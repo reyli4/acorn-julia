@@ -65,7 +65,7 @@ function get_if_lims(year, n_if_lims, nt=8760)
     @assert size(if_lim_dn, 2) == nt "Lower interface limits is incorrect size"
     @assert size(if_lim_dn, 1) == n_if_lims "Lower interface limits is incorrect size"
 
-    if_lim_map = Matrix(CSV.read("$(data_dir)/nyiso/interface_limits/if_lim_map.csv", DataFrame, header=true))
+    if_lim_map = CSV.read("$(data_dir)/nyiso/interface_limits/if_lim_map.csv", DataFrame, header=true)
 
     if_lim_up[9, :] .= if_lim_up[9, :] ./ 8750 .* 8450 # ?????
 
@@ -82,6 +82,60 @@ function get_storage(batt_scalar, batt_duration, nt=8760)
     storage_cap = vcat(storage_cap, batt_scalar * 12 * repeat(batt_cap[end:end, 2], 1, nt + 1))  # Adjust for last storage
 
     return charge_cap, storage_cap, storage_bus_ids
+end
+
+function add_hvdc(gen_prop, new_hvdc=true)
+    """
+    Adds in HVDC lines as dummy generators
+    """
+    # Existing HVDC lines (from the 2019 paper)
+    csc1 = similar(gen_prop, 1)
+    csc1[1, :] = reshape([1.0, -409.833333333333, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 530.0, -530.0, zeros(11)..., "HVDC_CSC"], 1, :) # CSC+NPX1358
+
+    csc2 = similar(gen_prop, 1)
+    csc2[1, :] = reshape([47.0, 409.833333333333, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 530.0, -530.0, zeros(11)..., "HVDC_CSC"], 1, :) # CSC+NPX1358
+
+    neptune1 = similar(gen_prop, 1)
+    neptune1[1, :] = reshape([53.0, -660.0, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_Neptune"], 1, :) # Neptune
+
+    neptune2 = similar(gen_prop, 1)
+    neptune2[1, :] = reshape([46.0, 660.0, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_Neptune"], 1, :) # Neptune
+
+    vft1 = similar(gen_prop, 1)
+    vft1[1, :] = reshape([54.0, -560.833333333333, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_VFT"], 1, :) # VFT
+
+    vft2 = similar(gen_prop, 1)
+    vft2[1, :] = reshape([48.0, 560.833333333333, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_VFT"], 1, :) # VFT
+
+    htp1 = similar(gen_prop, 1)
+    htp1[1, :] = reshape([54.0, -315.0, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_HTP"], 1, :) # HTP
+
+    htp2 = similar(gen_prop, 1)
+    htp2[1, :] = reshape([48.0, 315.0, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_HTP"], 1, :) # HTP
+
+    gen_prop = vcat(gen_prop, csc1, csc2, neptune1, neptune2, vft1, vft2, htp1, htp2)
+
+    # Proposed new HVDC lines
+    if new_hvdc
+        cleanpath1 = similar(gen_prop, 1)
+        cleanpath1[1, :] = reshape([36, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "HVDC_NYCleanPath"], 1, :) # NY Clean Path
+
+        cleanpath2 = similar(gen_prop, 1)
+        cleanpath2[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "HVDC_NYCleanPath"], 1, :) # NY Clean Path
+
+        CHPexpress1 = similar(gen_prop, 1)
+        CHPexpress1[1, :] = reshape([15, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_CHPexpress"], 1, :) # Champlain Hudson Power Express
+
+        CHPexpress2 = similar(gen_prop, 1)
+        CHPexpress2[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_CHPexpress"], 1, :) # Champlain Hudson Power Express
+
+        HQgen = similar(gen_prop, 1)
+        HQgen[1, :] = reshape([15, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_HQ"], 1, :) # HydroQuebec
+
+        gen_prop = vcat(gen_prop, cleanpath1, cleanpath2, CHPexpress1, CHPexpress2, HQgen)
+    end
+
+    return gen_prop
 end
 
 ##############################
@@ -191,7 +245,7 @@ function get_solar_upv(cc_scenario, year, solar_scalar, nt=8760)
     solar_upv = CSV.read("$(tmp_data_dir)/gen/Solar/Scenario$(cc_scenario)/solarUPV$(year).csv", DataFrame, header=false)
     @assert size(solar_upv, 2) == nt + 1 "Solar UPV is incorrect size"
     solar_upv_bus_ids = Int.(solar_upv[:, 1])
-    solar_upv_gen = Matrix(solar_upv[:, 1:end]) .* solar_scalar
+    solar_upv_gen = Matrix(solar_upv[:, 2:end]) .* solar_scalar
     return solar_upv_gen, solar_upv_bus_ids
 end
 
@@ -203,7 +257,7 @@ function get_wind(year, wind_scalar, nt=8760)
     wind = CSV.read("$(tmp_data_dir)/gen/Wind/Wind$(year).csv", DataFrame, header=false)
     @assert size(wind, 2) == nt + 1 "Wind is incorrect size"
     wind_bus_ids = Int.(wind[:, 1])
-    wind_gen = Matrix(wind[:, 1:end]) .* wind_scalar
+    wind_gen = Matrix(wind[:, 2:end]) .* wind_scalar
     return wind_gen, wind_bus_ids
 end
 

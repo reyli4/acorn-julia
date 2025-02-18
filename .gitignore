@@ -1,4 +1,4 @@
 data/*
 !data/grid/
-
+out/
 data_tmp/
