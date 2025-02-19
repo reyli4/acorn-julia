@@ -7,6 +7,24 @@ using DataFrames
 data_dir = joinpath(dirname(@__DIR__), "data")
 tmp_data_dir = joinpath(dirname(@__DIR__), "data_tmp")
 
+##################################
+# Misc
+##################################
+function write_model(model, filename)
+    open(filename, "w") do f
+        # Print objective
+        println(f, "Objective: ", objective_function(model))
+
+        # Print all constraints
+        for (F, S) in list_of_constraint_types(model)
+            for con in all_constraints(model, F, S)
+                println(f, con)
+            end
+        end
+    end
+end
+
+
 #################################
 # Read uncertain scaling factors
 #################################
@@ -86,53 +104,56 @@ end
 
 function add_hvdc(gen_prop, new_hvdc=true)
     """
-    Adds in HVDC lines as dummy generators
+    Adds in HVDC lines as dummy generators.
+
+    NOTE: The bus indices here are different from the original model becuase we use
+    the original indexing (we do not apply MATPOWER's ex2int).
     """
     # Existing HVDC lines (from the 2019 paper)
     csc1 = similar(gen_prop, 1)
-    csc1[1, :] = reshape([1.0, -409.833333333333, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 530.0, -530.0, zeros(11)..., "HVDC_CSC"], 1, :) # CSC+NPX1358
+    csc1[1, :] = reshape([21, -409.833333333333, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 530.0, -530.0, zeros(11)..., "HVDC_CSC"], 1, :) # CSC+NPX1358
 
     csc2 = similar(gen_prop, 1)
-    csc2[1, :] = reshape([47.0, 409.833333333333, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 530.0, -530.0, zeros(11)..., "HVDC_CSC"], 1, :) # CSC+NPX1358
+    csc2[1, :] = reshape([80, 409.833333333333, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 530.0, -530.0, zeros(11)..., "HVDC_CSC"], 1, :) # CSC+NPX1358
 
     neptune1 = similar(gen_prop, 1)
-    neptune1[1, :] = reshape([53.0, -660.0, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_Neptune"], 1, :) # Neptune
+    neptune1[1, :] = reshape([124, -660.0, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_Neptune"], 1, :) # Neptune
 
     neptune2 = similar(gen_prop, 1)
-    neptune2[1, :] = reshape([46.0, 660.0, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_Neptune"], 1, :) # Neptune
+    neptune2[1, :] = reshape([79, 660.0, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_Neptune"], 1, :) # Neptune
 
     vft1 = similar(gen_prop, 1)
-    vft1[1, :] = reshape([54.0, -560.833333333333, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_VFT"], 1, :) # VFT
+    vft1[1, :] = reshape([125, -560.833333333333, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_VFT"], 1, :) # VFT
 
     vft2 = similar(gen_prop, 1)
-    vft2[1, :] = reshape([48.0, 560.833333333333, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_VFT"], 1, :) # VFT
+    vft2[1, :] = reshape([81, 560.833333333333, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_VFT"], 1, :) # VFT
 
     htp1 = similar(gen_prop, 1)
-    htp1[1, :] = reshape([54.0, -315.0, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_HTP"], 1, :) # HTP
+    htp1[1, :] = reshape([125, -315.0, 0.0, 100.0, -100.0, 1.01, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_HTP"], 1, :) # HTP
 
     htp2 = similar(gen_prop, 1)
-    htp2[1, :] = reshape([48.0, 315.0, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_HTP"], 1, :) # HTP
+    htp2[1, :] = reshape([81, 315.0, 0.0, 100.0, -100.0, 1.0, 100.0, 1.0, 660.0, -660.0, zeros(11)..., "HVDC_HTP"], 1, :) # HTP
 
-    gen_prop = vcat(gen_prop, csc1, csc2, neptune1, neptune2, vft1, vft2, htp1, htp2)
+    gen_prop = vcat(gen_prop, csc1, neptune1, vft1, htp1, csc2, neptune2, vft2, htp2)
 
     # Proposed new HVDC lines
     if new_hvdc
         cleanpath1 = similar(gen_prop, 1)
-        cleanpath1[1, :] = reshape([36, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "HVDC_NYCleanPath"], 1, :) # NY Clean Path
+        cleanpath1[1, :] = reshape([69, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "HVDC_NYCleanPath"], 1, :) # NY Clean Path
 
         cleanpath2 = similar(gen_prop, 1)
-        cleanpath2[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "HVDC_NYCleanPath"], 1, :) # NY Clean Path
+        cleanpath2[1, :] = reshape([81, 0, 0, 100, -100, 1, 100, 1, 1300, -1300, zeros(11)..., "HVDC_NYCleanPath"], 1, :) # NY Clean Path
 
         CHPexpress1 = similar(gen_prop, 1)
-        CHPexpress1[1, :] = reshape([15, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_CHPexpress"], 1, :) # Champlain Hudson Power Express
+        CHPexpress1[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_CHPexpress"], 1, :) # Champlain Hudson Power Express
 
         CHPexpress2 = similar(gen_prop, 1)
-        CHPexpress2[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_CHPexpress"], 1, :) # Champlain Hudson Power Express
+        CHPexpress2[1, :] = reshape([81, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_CHPexpress"], 1, :) # Champlain Hudson Power Express
 
         HQgen = similar(gen_prop, 1)
-        HQgen[1, :] = reshape([15, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_HQ"], 1, :) # HydroQuebec
+        HQgen[1, :] = reshape([48, 0, 0, 100, -100, 1, 100, 1, 1250, -1250, zeros(11)..., "HVDC_HQ"], 1, :) # HydroQuebec
 
-        gen_prop = vcat(gen_prop, cleanpath1, cleanpath2, CHPexpress1, CHPexpress2, HQgen)
+        gen_prop = vcat(gen_prop, HQgen, cleanpath1, cleanpath2, CHPexpress1, CHPexpress2)
     end
 
     return gen_prop

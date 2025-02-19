@@ -51,13 +51,13 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     # Read hydro
     niagra_hydro, moses_saund_hydro = get_hydro(cc_scenario, year)
 
-    # Add utility solar generators
-    solar_upv_gen, solar_upv_bus_ids = get_solar_upv(cc_scenario, year, solar_scalar)
-    gen_prop = add_upv_generators(gen_prop, solar_upv_bus_ids)
-
     # Add wind generators to the model
     wind_gen, wind_bus_ids = get_wind(year, wind_scalar)
     gen_prop = add_wind_generators(gen_prop, wind_bus_ids)
+
+    # Add utility solar generators
+    solar_upv_gen, solar_upv_bus_ids = get_solar_upv(cc_scenario, year, solar_scalar)
+    gen_prop = add_upv_generators(gen_prop, solar_upv_bus_ids)
 
     # HVDC generators
     gen_prop = add_hvdc(gen_prop)
@@ -223,7 +223,7 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     # Generator capacity constraints
     @constraint(model, g_min .<= pg .<= g_max)
 
-    # HVDC lines (modelled as two dummy generators on each side of the lines)
+    # HVDC constraints (modelled as two dummy generators on each side of the lines)
     csc_idx = findall(x -> x == "HVDC_CSC", gen_prop[!, "UNIT_TYPE"])
     @constraint(model, pg[csc_idx[1], :] .== -pg[csc_idx[2], :]) # SC+NPX1385
 
@@ -251,19 +251,18 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     @constraint(model, 0.0 .<= load_shedding .<= max.(load, 0))
 
     # Extract generation for wind and calculate curtailment
-    wind_idx = findall(x -> x == "Wind", gen_prop[!, "UNIT_TYPE"])
     wg = pg[wind_idx, :]
     wc = wind_gen .- wg
 
     # Extract generation for utility-scale solar (UPV) and calculate curtailment
-    solar_idx = findall(x -> x == "SolarUPV", gen_prop[!, "UNIT_TYPE"])
-    sg = pg[solar_idx, :]
+    sg = pg[solar_upv_idx, :]
     sc = solar_upv_gen .- sg
 
     # Objective function: Minimize load shedding and storage operation costs
     @objective(model, Min, sum(load_shedding) + 0.05 * (sum(charge) + sum(discharge)))
 
     # SOLVE
+    write_model(model, "model.txt")
     optimize!(model)
 
     # Check if the solver found an optimal solution
@@ -271,7 +270,6 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
         # Extract results
         pg_result = value.(pg)
         flow_result = value.(flow)
-        angle_result = value.(bus_angle) .* (180 / pi)  # Convert angles to degrees;
         charge_result = value.(charge)
         discharge_result = value.(discharge)
         batt_state_result = value.(batt_state)
