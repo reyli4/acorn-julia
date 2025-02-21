@@ -6,8 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "dask-labextension>=7.0.0",
-    "dask[distributed]>=2025.2.0",
-    "jupyterlab>=4.3.5",
     "numpy>=2.2.3",
-    "xarray>=2025.1.2",
+    "xarray[io,parallel,viz]>=2025.1.2",
 ]
+
+[tool.uv]
+package = true

@@ -1,0 +1,3 @@
+dask-labextension>=7.0.0
+numpy>=2.2.3
+xarray[io,parallel,viz]>=2025.1.2
