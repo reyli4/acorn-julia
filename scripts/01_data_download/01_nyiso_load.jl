@@ -17,6 +17,10 @@ Assumptions:
 - Load zones seem to change over time, from NYC_LongIsland to NYC and LongIsland. We assume
   that the NYC_LongIsland zone can be split into NYC and LongIsland, using a ratio of 2.5:1.
 """
+#########################################################
+# Output dir
+data_folder = "/home/fs01/dcl257/data/nyiso/historical_load"
+#########################################################
 
 ###########################
 ## Preliminaries
@@ -24,9 +28,8 @@ Assumptions:
 # Define project root directory
 base_dir = dirname(dirname(@__FILE__))
 
-# Define the base URL and destination folder
+# Define the base URL
 base_url = "http://mis.nyiso.com/public/csv/pal/"
-data_folder = "$base_dir/data/nyiso/historical_load"
 
 # Create the relevant folders
 isdir(data_folder) || mkpath(data_folder)
