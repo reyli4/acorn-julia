@@ -1,6 +1,7 @@
-data/*
-!data/grid/
-!data/nyiso/shapefiles/
+data/data_tmp/
+data/out/
+data/nyiso/historical_load/extracted/
+data/nyiso/historical_load/zipped/
 out/
 data_tmp/
 model.txt
