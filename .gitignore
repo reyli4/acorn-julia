@@ -1,5 +1,7 @@
+**/*.ipynb_checkpoints/
 data/data_tmp/
 data/out/
+data/climate/
 data/nyiso/historical_load/extracted/
 data/nyiso/historical_load/zipped/
 out/
