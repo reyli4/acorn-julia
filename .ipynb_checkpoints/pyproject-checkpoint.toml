@@ -5,12 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "certifi>=2025.1.31",
     "dask-labextension>=7.0.0",
     "geopandas>=1.0.1",
     "numpy>=2.2.3",
     "requests>=2.32.3",
-    "salem>=0.3.11",
     "xagg>=0.3.3.0",
     "xarray[io,parallel,viz]>=2025.1.2",
 ]
