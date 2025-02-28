@@ -1,5 +1,6 @@
 data/*
 !data/grid/
+!data/nyiso/shapefiles/
 out/
 data_tmp/
 model.txt
