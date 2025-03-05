@@ -9,6 +9,7 @@ dependencies = [
     "geopandas>=1.0.1",
     "numpy>=2.2.3",
     "salem>=0.3.11",
+    "xarray-regrid>=0.4.0",
     "xarray[io,parallel,viz]>=2025.1.2",
 ]
 
