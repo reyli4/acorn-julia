@@ -28,9 +28,10 @@ def tgw_to_zones(
     for itime in range(len(tgw["time"])):
         # Convert TGW to dataframe
         tgw_df = tgw[tgw_vars].isel(time=itime).to_dataframe().reset_index(drop=True)
-        tgw_df = gpd.GeoDataFrame(tgw_df, geometry=tgw.salem.grid.to_geometry().geometry).set_crs(
-            tgw_crs
-        )
+        tgw_df = gpd.GeoDataFrame(
+            tgw_df,
+            geometry=tgw.salem.grid.to_geometry().geometry,
+        ).set_crs(tgw_crs)
         tgw_df["cell_index"] = tgw_df.index.values
 
         # Get intersection
@@ -38,14 +39,17 @@ def tgw_to_zones(
 
         # Area weighting
         intersection["area"] = intersection.area
-        intersection["weight"] = intersection["area"] / intersection[["ZONE", "area"]].groupby(
-            "ZONE"
-        ).area.transform("sum")
+        intersection["weight"] = intersection["area"] / intersection[["ZONE", "area"]].groupby("ZONE").area.transform(
+            "sum"
+        )
 
         # Compute average
         out.append(
             intersection[tgw_vars]
-            .multiply(intersection["weight"], axis="index")
+            .multiply(
+                intersection["weight"],
+                axis="index",
+            )
             .join(intersection[["ZONE", "time"]])
             .groupby(["ZONE", "time"])
             .sum()

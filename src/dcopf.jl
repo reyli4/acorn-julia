@@ -5,8 +5,9 @@ using DataFrames
 using MAT
 using LinearAlgebra
 using MathOptInterface
+using Dates
 
-include("./utils.jl")
+include("./acorn_utils.jl")
 
 ##############################
 # Set data directories
@@ -22,7 +23,8 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     batt_duration = 8
     storage_eff = 0.85 # Efficiency for general storage
     gilboa_eff = 0.75 # Efficiency for specific storage (e.g., Gilboa)
-    nt = 8760
+    # Get number of hours in the year
+    nt = Dates.daysinyear(year) * 24
 
     n_if_lims = 15
 
@@ -43,20 +45,20 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     cc_scenario, bd_rate, ev_rate, wind_scalar, solar_scalar, batt_scalar = read_scaling_factors(scenario)
 
     ############## Load ####################
-    load = get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids)
-    load = subtract_small_hydro(load, bus_ids)
-    load = subtract_solar_dpv(load, bus_ids, cc_scenario, year, solar_scalar)
+    load = get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
+    load = subtract_small_hydro(load, bus_ids, nt)
+    load = subtract_solar_dpv(load, bus_ids, cc_scenario, year, solar_scalar, nt)
 
     ############## Supply ##############
     # Read hydro
     niagra_hydro, moses_saund_hydro = get_hydro(cc_scenario, year)
 
     # Add wind generators to the model
-    wind_gen, wind_bus_ids = get_wind(year, wind_scalar)
+    wind_gen, wind_bus_ids = get_wind(year, wind_scalar, nt)
     gen_prop = add_wind_generators(gen_prop, wind_bus_ids)
 
     # Add utility solar generators
-    solar_upv_gen, solar_upv_bus_ids = get_solar_upv(cc_scenario, year, solar_scalar)
+    solar_upv_gen, solar_upv_bus_ids = get_solar_upv(cc_scenario, year, solar_scalar, nt)
     gen_prop = add_upv_generators(gen_prop, solar_upv_bus_ids)
 
     # HVDC generators
@@ -82,14 +84,14 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
 
     ############## Grid ##############
     # Transmission interface limits
-    if_lim_up, if_lim_dn, if_lim_map = get_if_lims(year, n_if_lims)
+    if_lim_up, if_lim_dn, if_lim_map = get_if_lims(year, n_if_lims, nt)
 
     # Branch limits
     branch_lims = repeat(Float64.(branch_prop[:, "RATE_A"]), 1, nt)
     branch_lims[branch_lims.==0] .= 99999.0
 
     # Storage
-    charge_cap, storage_cap, storage_bus_ids = get_storage(batt_scalar, batt_duration)
+    charge_cap, storage_cap, storage_bus_ids = get_storage(batt_scalar, batt_duration, nt)
 
     ########## Optimization ##############
     n_gen = size(gen_prop, 1)
@@ -295,4 +297,3 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     CSV.write("$(out_path)/batt_state_$(year).csv", DataFrame(batt_state_result, :auto), header=false)
     CSV.write("$(out_path)/load_shedding_$(year).csv", DataFrame(load_shedding_result, :auto), header=false)
 end
-;

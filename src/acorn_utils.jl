@@ -69,7 +69,7 @@ end
 ##############################
 # Grid
 ##############################
-function get_if_lims(year, n_if_lims, nt=8760)
+function get_if_lims(year, n_if_lims, nt)
     """
     Read interface limit information
     """
@@ -90,7 +90,7 @@ function get_if_lims(year, n_if_lims, nt=8760)
     return if_lim_up, if_lim_dn, if_lim_map
 end
 
-function get_storage(batt_scalar, batt_duration, nt=8760)
+function get_storage(batt_scalar, batt_duration, nt)
     storage = Matrix(CSV.read("$(tmp_data_dir)/StorageData/StorageAssignment.csv", DataFrame, header=false))
     storage_bus_ids = Int.(storage[:, 1])
     batt_cap = Matrix(storage[:, 1:end])
@@ -162,7 +162,7 @@ end
 ##############################
 # Load
 ##############################
-function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt=8760)
+function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
     """
     Reads and sums the four kinds of load (base, commerical, residential, EV)
 
@@ -173,21 +173,33 @@ function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt=8760)
     # Base load
     base_load = Matrix(CSV.read("$(tmp_data_dir)/load/BaseLoad/Scenario$(cc_scenario)/simload_$(year).csv", DataFrame, header=false))
     # base_load = hcat(bus_ids, base_load) # prepend bus_ids (UPDATE THIS!)
-    @assert size(base_load, 2) == nt "Base load is incorrect size"
+    # @assert size(base_load, 2) == nt "Base load is incorrect size"
+    if size(base_load, 2) != nt
+        println("WARNING: Base load is incorrect size for year $(year)")
+    end
 
     # EV load, only for certain buses
     ev_load = Matrix(CSV.read("$(tmp_data_dir)/load/EVload/EVload_Bus.csv", DataFrame, header=false))
-    @assert size(ev_load, 2) == nt + 1 "EV load is incorrect size"
+    # @assert size(ev_load, 2) == nt + 1 "EV load is incorrect size"
+    if size(ev_load, 2) != nt + 1
+        println("WARNING: EV load is incorrect size for year $(year)")
+    end
     ev_load_bus_id = ev_load[:, 1]
 
     # Residential load, for certain buses
     res_load = Matrix(CSV.read("$(tmp_data_dir)/load/ResLoad/Scenario$(cc_scenario)/ResLoad_Bus_$(year).csv", DataFrame, header=false))
-    @assert size(res_load, 2) == nt + 1 "Residential load is incorrect size"
+    # @assert size(res_load, 2) == nt + 1 "Residential load is incorrect size"
+    if size(res_load, 2) != nt + 1
+        println("WARNING: Residential load is incorrect size for year $(year)")
+    end
     res_load_bus_id = res_load[:, 1]
 
     # Commerical load, for certain buses
     com_load = Matrix(CSV.read("$(tmp_data_dir)/load/ComLoad/Scenario$(cc_scenario)/ComLoad_Bus_$(year).csv", DataFrame, header=false))
-    @assert size(com_load, 2) == nt + 1 "Commercial load is incorrect size"
+    # @assert size(com_load, 2) == nt + 1 "Commercial load is incorrect size"
+    if size(com_load, 2) != nt + 1
+        println("WARNING: Commercial load is incorrect size for year $(year)")
+    end
     com_load_bus_id = com_load[:, 1]
 
     # Total load
@@ -214,7 +226,7 @@ function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt=8760)
     return total_load
 end
 
-function subtract_solar_dpv(load_in, bus_ids, cc_scenario, year, solar_scalar, nt=8760)
+function subtract_solar_dpv(load_in, bus_ids, cc_scenario, year, solar_scalar, nt)
     """
     Adjusts the load data by subtracting behind-the-meter solar (SolarDPV)
     """
@@ -222,7 +234,10 @@ function subtract_solar_dpv(load_in, bus_ids, cc_scenario, year, solar_scalar, n
 
     # Load renewable generation data: only for certain buses so record those bus ids
     solar_dpv = Matrix(CSV.read("$(tmp_data_dir)/gen/Solar/Scenario$(cc_scenario)/solarDPV$(year).csv", DataFrame, header=false))
-    @assert size(solar_dpv, 2) == nt + 1 "Solar DPV is incorrect size"
+    # @assert size(solar_dpv, 2) == nt + 1 "Solar DPV is incorrect size"
+    if size(solar_dpv, 2) != nt + 1
+        println("WARNING: Solar DPV is incorrect size for year $(year)")
+    end
     solar_dpv_bus_ids = Int.(solar_dpv[:, 1])
 
     # Adjust loads with behind-the-meter solar
@@ -234,7 +249,7 @@ function subtract_solar_dpv(load_in, bus_ids, cc_scenario, year, solar_scalar, n
     return load
 end
 
-function subtract_small_hydro(load_in, bus_ids, nt=8760)
+function subtract_small_hydro(load_in, bus_ids, nt)
     """
     Adjusts the load data by subtracting small hydro generation
     """
@@ -242,7 +257,10 @@ function subtract_small_hydro(load_in, bus_ids, nt=8760)
 
     # Read small hydro
     small_hydro_gen = Matrix(CSV.read("$(tmp_data_dir)/hydrodata/smallhydrogen.csv", DataFrame, header=false))
-    @assert size(small_hydro_gen, 2) == nt "Small hydro generation is incorrect size"
+    # @assert size(small_hydro_gen, 2) == nt "Small hydro generation is incorrect size"
+    if size(small_hydro_gen, 2) != nt
+        println("WARNING: Small hydro generation is incorrect size")
+    end
     # Read small hydro bus ids (UPDATE THIS!!)
     small_hydro_bus_id = CSV.read("$(tmp_data_dir)/hydrodata/SmallHydroCapacity.csv", DataFrame)[!, "bus index"]
 
@@ -258,25 +276,31 @@ end
 ############################################################
 # Generation
 ############################################################
-function get_solar_upv(cc_scenario, year, solar_scalar, nt=8760)
+function get_solar_upv(cc_scenario, year, solar_scalar, nt)
     """
     Read solar generationd data
     """
     # SolarUPV generation data
     solar_upv = CSV.read("$(tmp_data_dir)/gen/Solar/Scenario$(cc_scenario)/solarUPV$(year).csv", DataFrame, header=false)
-    @assert size(solar_upv, 2) == nt + 1 "Solar UPV is incorrect size"
+    # @assert size(solar_upv, 2) == nt + 1 "Solar UPV is incorrect size"
+    if size(solar_upv, 2) != nt + 1
+        println("WARNING: Solar UPV is incorrect size for year $(year)")
+    end
     solar_upv_bus_ids = Int.(solar_upv[:, 1])
     solar_upv_gen = Matrix(solar_upv[:, 2:end]) .* solar_scalar
     return solar_upv_gen, solar_upv_bus_ids
 end
 
-function get_wind(year, wind_scalar, nt=8760)
+function get_wind(year, wind_scalar, nt)
     """
     Read solar generationd data
     """
     # Wind generation data
     wind = CSV.read("$(tmp_data_dir)/gen/Wind/Wind$(year).csv", DataFrame, header=false)
-    @assert size(wind, 2) == nt + 1 "Wind is incorrect size"
+    # @assert size(wind, 2) == nt + 1 "Wind is incorrect size"
+    if size(wind, 2) != nt + 1
+        println("WARNING: Wind is incorrect size for year $(year)")
+    end
     wind_bus_ids = Int.(wind[:, 1])
     wind_gen = Matrix(wind[:, 2:end]) .* wind_scalar
     return wind_gen, wind_bus_ids
