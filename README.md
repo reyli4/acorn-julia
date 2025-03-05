@@ -1,1 +1,5 @@
-# nys_clcpa_2050
+# ACORN-julia
+
+## A Climate-informed Operational Reliability Netork
+
+Written in Julia
