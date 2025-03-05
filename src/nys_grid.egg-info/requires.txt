@@ -1,5 +1,0 @@
-dask-labextension>=7.0.0
-geopandas>=1.0.1
-numpy>=2.2.3
-salem>=0.3.11
-xarray[io,parallel,viz]>=2025.1.2
