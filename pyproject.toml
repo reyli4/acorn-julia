@@ -1,5 +1,5 @@
 [project]
-name = "nys-grid"
+name = "acorn-julia"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,6 +9,7 @@ dependencies = [
     "geopandas>=1.0.1",
     "numpy>=2.2.3",
     "salem>=0.3.11",
+    "scikit-learn>=1.6.1",
     "xarray[io,parallel,viz]>=2025.1.2",
 ]
 

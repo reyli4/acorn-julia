@@ -3,7 +3,7 @@ import requests
 import zipfile
 import pandas as pd
 import numpy as np
-from datetime import datetime, date, timedelta
+from datetime import date
 import matplotlib.pyplot as plt
 
 """
@@ -86,7 +86,7 @@ def process_load_file(file_path):
     df["Hourly Time"] = df["Time Stamp"].dt.floor("h")
 
     # Create a new DataFrame for the transformed data
-    transformed_rows = pd.DataFrame(columns=["HourlyTime", "Zone", "Load_MW"])
+    transformed_rows = pd.DataFrame(columns=["time", "zone", "load_MW"])
 
     # Create separate dataframes for NYC_LONGIL and other zones
     nyc_longil_df = df[df["Name"] == "N.Y.C._LONGIL"].copy()
@@ -95,35 +95,35 @@ def process_load_file(file_path):
     # Process NYC_LONGIL rows
     nyc_rows = pd.DataFrame(
         {
-            "HourlyTime": nyc_longil_df["Hourly Time"],
-            "Zone": "J",
-            "Load_MW": nyc_longil_df["Integrated Load"] * (2.5 / 3.5),
+            "time": nyc_longil_df["Hourly Time"],
+            "zone": "J",
+            "load_MW": nyc_longil_df["Integrated Load"] * (2.5 / 3.5),
         }
     )
 
     longisland_rows = pd.DataFrame(
         {
-            "HourlyTime": nyc_longil_df["Hourly Time"],
-            "Zone": "K",
-            "Load_MW": nyc_longil_df["Integrated Load"] * (1 / 3.5),
+            "time": nyc_longil_df["Hourly Time"],
+            "zone": "K",
+            "load_MW": nyc_longil_df["Integrated Load"] * (1 / 3.5),
         }
     )
 
     # Process other zones
-    other_zones_df["Zone"] = other_zones_df["Name"].map(name_mapping)
+    other_zones_df["zone"] = other_zones_df["Name"].map(name_mapping)
     other_rows = pd.DataFrame(
         {
-            "HourlyTime": other_zones_df["Hourly Time"],
-            "Zone": other_zones_df["Zone"],
-            "Load_MW": other_zones_df["Integrated Load"],
+            "time": other_zones_df["Hourly Time"],
+            "zone": other_zones_df["zone"],
+            "load_MW": other_zones_df["Integrated Load"],
         }
     )
 
     # Combine all rows
     transformed_rows = pd.concat([nyc_rows, longisland_rows, other_rows], ignore_index=True)
 
-    # Calculate hourly averages and group by "Hourly Time" and "Zone"
-    df_hourly = transformed_rows.groupby(["HourlyTime", "Zone"])["Load_MW"].mean().reset_index()
+    # Calculate hourly averages and group by "Hourly Time" and "zone"
+    df_hourly = transformed_rows.groupby(["time", "zone"])["load_MW"].mean().reset_index()
 
     return df_hourly
 
@@ -177,7 +177,7 @@ def combine_load_data():
     files = os.listdir(f"{data_folder}/extracted")
 
     # Loop through and process each file
-    combined_df = pd.DataFrame(columns=["HourlyTime", "Zone", "Load_MW"])
+    combined_df = pd.DataFrame(columns=["time", "zone", "load_MW"])
     for file in files:
         file_path = f"{data_folder}/extracted/{file}"
         try:
@@ -187,8 +187,8 @@ def combine_load_data():
         except Exception as e:
             print(f"Error processing {file}: {e}")
 
-    # Sort by HourlyTime and Zone
-    combined_df = combined_df.sort_values(["HourlyTime", "Zone"]).reset_index(drop=True)
+    # Sort by time and Zone
+    combined_df = combined_df.sort_values(["time", "zone"]).reset_index(drop=True)
 
     # Store the combined dataframe
     combined_df.to_csv(combined_file_path, index=False)
@@ -202,23 +202,23 @@ def combine_load_data():
 def plot_historical_loads(year):
     # Load the combined CSV file
     df = pd.read_csv(f"{data_folder}/combined/historical_load.csv")
-    df["HourlyTime"] = pd.to_datetime(df["HourlyTime"])
+    df["time"] = pd.to_datetime(df["time"])
 
     # Group by each hour and calculate the total load across all zones
-    df_agg = df.groupby("HourlyTime")["Load_MW"].sum().reset_index()
-    df_agg["Load_GW"] = df_agg["Load_MW"] / 1000
+    df_agg = df.groupby("time")["load_MW"].sum().reset_index()
+    df_agg["load_GW"] = df_agg["load_MW"] / 1000
 
     # Add new columns for day, month, and hour
-    df_agg["Year"] = df_agg["HourlyTime"].dt.year
-    df_agg["Month"] = df_agg["HourlyTime"].dt.month
-    df_agg["Day"] = df_agg["HourlyTime"].dt.day
-    df_agg["Hour"] = df_agg["HourlyTime"].dt.hour
+    df_agg["Year"] = df_agg["time"].dt.year
+    df_agg["Month"] = df_agg["time"].dt.month
+    df_agg["Day"] = df_agg["time"].dt.day
+    df_agg["Hour"] = df_agg["time"].dt.hour
 
     # Plot specified year
     df_year = df_agg[df_agg["Year"] == year].copy()
 
     fig, ax = plt.subplots(1, 1, figsize=(12, 6))
-    ax.plot(df_year["HourlyTime"], df_year["Load_GW"], linewidth=1)
+    ax.plot(df_year["time"], df_year["load_GW"], linewidth=1)
     ax.set_ylabel("Total Load (GW)")
     ax.set_title(f"NYISO Load in {year}")
     ax.grid(alpha=0.5)
@@ -228,11 +228,11 @@ def plot_historical_loads(year):
     percentiles = (
         df_agg.groupby(["Day", "Month", "Hour"])
         .agg(
-            Min_Load_GW=("Load_GW", "min"),
-            q01_Load_GW=("Load_GW", lambda x: np.percentile(x, 1)),
-            Median_Load_GW=("Load_GW", "median"),
-            q99_Load_GW=("Load_GW", lambda x: np.percentile(x, 99)),
-            Max_Load_GW=("Load_GW", "max"),
+            Min_Load_GW=("load_GW", "min"),
+            q01_Load_GW=("load_GW", lambda x: np.percentile(x, 1)),
+            Median_Load_GW=("load_GW", "median"),
+            q99_Load_GW=("load_GW", lambda x: np.percentile(x, 99)),
+            Max_Load_GW=("load_GW", "max"),
         )
         .reset_index()
     )
