@@ -1,5 +1,5 @@
 # ACORN-julia
 
-## A Climate-informed Operational Reliability Netork
+**A Climate-informed Operational Reliability Network**
 
 Written in Julia
