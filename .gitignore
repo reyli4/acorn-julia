@@ -1,4 +1,6 @@
-**/*.ipynb_checkpoints/
+.ipynb_checkpoints/
+__pycache__/
+*.egg-info/
 data/data_tmp/
 data/out/
 data/climate/
