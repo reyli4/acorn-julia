@@ -24,7 +24,8 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     storage_eff = 0.85 # Efficiency for general storage
     gilboa_eff = 0.75 # Efficiency for specific storage (e.g., Gilboa)
     # Get number of hours in the year
-    nt = Dates.daysinyear(year) * 24
+    # nt = Dates.daysinyear(year) * 24
+    nt = 365 * 24
 
     n_if_lims = 15
 
