@@ -11,6 +11,7 @@ dependencies = [
     { name = "numpy" },
     { name = "salem" },
     { name = "scikit-learn" },
+    { name = "seaborn" },
     { name = "xarray", extra = ["io", "parallel", "viz"] },
 ]
 
@@ -21,6 +22,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.2.3" },
     { name = "salem", specifier = ">=0.3.11" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
+    { name = "seaborn", specifier = ">=0.13.2" },
     { name = "xarray", extras = ["io", "parallel", "viz"], specifier = ">=2025.1.2" },
 ]
 

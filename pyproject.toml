@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=2.2.3",
     "salem>=0.3.11",
     "scikit-learn>=1.6.1",
+    "seaborn>=0.13.2",
     "xarray[io,parallel,viz]>=2025.1.2",
 ]
 

@@ -16,6 +16,8 @@ Assumptions:
 - Load zones seem to change over time, from NYC_LongIsland to NYC and LongIsland. We assume
   that the NYC_LongIsland zone can be split into NYC and LongIsland, using a ratio of 2.5:1.
 - We use "integrated" real-time actual load, which corresponds to integrating over the hour.
+
+NOTE: Time index is in local time (EST/EDT) and not UTC.
 """
 
 ###########################
