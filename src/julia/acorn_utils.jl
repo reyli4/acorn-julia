@@ -176,6 +176,7 @@ function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
     # @assert size(base_load, 2) == nt "Base load is incorrect size"
     if size(base_load, 2) != nt
         println("WARNING: Base load is incorrect size for year $(year)")
+        base_load = base_load[:, 1:nt]
     end
 
     # EV load, only for certain buses
@@ -183,6 +184,7 @@ function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
     # @assert size(ev_load, 2) == nt + 1 "EV load is incorrect size"
     if size(ev_load, 2) != nt + 1
         println("WARNING: EV load is incorrect size for year $(year)")
+        ev_load = ev_load[:, 1:nt+1]
     end
     ev_load_bus_id = ev_load[:, 1]
 
@@ -191,6 +193,7 @@ function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
     # @assert size(res_load, 2) == nt + 1 "Residential load is incorrect size"
     if size(res_load, 2) != nt + 1
         println("WARNING: Residential load is incorrect size for year $(year)")
+        res_load = res_load[:, 1:nt+1]
     end
     res_load_bus_id = res_load[:, 1]
 
@@ -199,6 +202,7 @@ function get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
     # @assert size(com_load, 2) == nt + 1 "Commercial load is incorrect size"
     if size(com_load, 2) != nt + 1
         println("WARNING: Commercial load is incorrect size for year $(year)")
+        com_load = com_load[:, 1:nt+1]
     end
     com_load_bus_id = com_load[:, 1]
 
@@ -237,6 +241,7 @@ function subtract_solar_dpv(load_in, bus_ids, cc_scenario, year, solar_scalar, n
     # @assert size(solar_dpv, 2) == nt + 1 "Solar DPV is incorrect size"
     if size(solar_dpv, 2) != nt + 1
         println("WARNING: Solar DPV is incorrect size for year $(year)")
+        solar_dpv = solar_dpv[:, 1:nt+1]
     end
     solar_dpv_bus_ids = Int.(solar_dpv[:, 1])
 
@@ -260,6 +265,7 @@ function subtract_small_hydro(load_in, bus_ids, nt)
     # @assert size(small_hydro_gen, 2) == nt "Small hydro generation is incorrect size"
     if size(small_hydro_gen, 2) != nt
         println("WARNING: Small hydro generation is incorrect size")
+        small_hydro_gen = small_hydro_gen[:, 1:nt]
     end
     # Read small hydro bus ids (UPDATE THIS!!)
     small_hydro_bus_id = CSV.read("$(tmp_data_dir)/hydrodata/SmallHydroCapacity.csv", DataFrame)[!, "bus index"]
@@ -285,6 +291,7 @@ function get_solar_upv(cc_scenario, year, solar_scalar, nt)
     # @assert size(solar_upv, 2) == nt + 1 "Solar UPV is incorrect size"
     if size(solar_upv, 2) != nt + 1
         println("WARNING: Solar UPV is incorrect size for year $(year)")
+        solar_upv = solar_upv[:, 1:nt+1]
     end
     solar_upv_bus_ids = Int.(solar_upv[:, 1])
     solar_upv_gen = Matrix(solar_upv[:, 2:end]) .* solar_scalar
@@ -300,6 +307,7 @@ function get_wind(year, wind_scalar, nt)
     # @assert size(wind, 2) == nt + 1 "Wind is incorrect size"
     if size(wind, 2) != nt + 1
         println("WARNING: Wind is incorrect size for year $(year)")
+        wind = wind[:, 1:nt+1]
     end
     wind_bus_ids = Int.(wind[:, 1])
     wind_gen = Matrix(wind[:, 2:end]) .* wind_scalar

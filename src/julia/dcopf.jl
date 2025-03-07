@@ -24,7 +24,8 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     storage_eff = 0.85 # Efficiency for general storage
     gilboa_eff = 0.75 # Efficiency for specific storage (e.g., Gilboa)
     # Get number of hours in the year
-    nt = Dates.daysinyear(year) * 24
+    # nt = Dates.daysinyear(year) * 24
+    nt = 365 * 24
 
     n_if_lims = 15
 
@@ -264,7 +265,6 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     @objective(model, Min, sum(load_shedding) + 0.05 * (sum(charge) + sum(discharge)))
 
     # SOLVE
-    write_model(model, "model.txt")
     optimize!(model)
 
     # Check if the solver found an optimal solution
