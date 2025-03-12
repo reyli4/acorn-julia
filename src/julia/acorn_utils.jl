@@ -73,7 +73,7 @@ function get_if_lims(year, n_if_lims, nt)
     """
     Read interface limit information
     """
-    if_scenario = 0 # DIFFERENT FROM MAIN??
+    if_scenario = 0 # Should there be temperature effects here?
 
     if_lim_up = Matrix(CSV.read("$(tmp_data_dir)/Iflim/iflimup_$(year)_$(if_scenario).csv", DataFrame, header=false))
     @assert size(if_lim_up, 2) == nt "Upper interface limits is incorrect size"
