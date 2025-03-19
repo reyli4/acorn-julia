@@ -1,8 +1,8 @@
-This directory holds the NYS grid network information. These files are the result of the network reduction in [Vivienne's 2021 paper](https://ieeexplore.ieee.org/document/9866561).
+This directory holds the NYS grid network information. These files are the result of the network reduction in [Liu et al. (2023)](https://ieeexplore.ieee.org/document/9866561).
 
 ### Bus information
 - `bus_prop_boyuan.csv`: Bus properties from [Bo's python repo](https://github.com/boyuan276/NYgrid-python)
-- `bus_prop_vivienne_2050.csv`: Bus properties from [Vivenne's 2050 repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
+- `bus_prop_liu_etal_2024.csv`: Bus properties from the [Liu et al. (2024) repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
 - Note that these files are identical other than column 3 (real power demand). They also agree with Elnaz's 2030 repo.
 - *Additional bus information* is given in `npcc_new.csv`, taken from [Bo's python repo](https://github.com/boyuan276/NYgrid-python). This seems to have been amended from the original NPCC 140-bus system information in [PSAT](http://faraday1.ucd.ie/psat.html). I could not verify this other than finding the original csv file [here](https://github.com/CURENT/andes/tree/master/andes/cases).
 - As far as I can tell, only the bus network connections and lat/lon locations are used. The other information does not enter into the OPF analysis.
@@ -26,9 +26,9 @@ Bus Data Format:
 
 ### Line information
 - `branch_prop_boyuan.csv`: Branch properties from [Bo's python repo](https://github.com/boyuan276/NYgrid-python)
-- `branch_prop_vivienne_2050.csv`: Branch properties from [Vivenne's 2050 repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
+- `branch_prop_liu_etal_2024.csv`: Branch properties from the [Liu et al. (2024) repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
 - These files are mostly identical. There are 3 additional branches in Bo's, representing 2 external and 1 internal connections. The flow limits are also different for some lines.
-- Note that both contain a duplicate (connecting buses 39-73). Elnaz 2030 agrees with Vivienne.
+- Note that both contain a duplicate (connecting buses 39-73). Kabir 2024 (2030 grid) agrees with Liu et al 2024.
 - Original data taken from NPCC 140-bus system as verified [here](https://github.com/CURENT/andes/tree/master/andes/cases), plus some additional data related to flow limits. 
 
 Branch Data Format:
@@ -51,7 +51,7 @@ Branch Data Format:
 ### Generator information
 
 - `gen_prop_boyuan.csv`: Generator matrix from [Bo's python repo](https://github.com/boyuan276/NYgrid-python)
-- `gen_prop_vivienne_2050.csv`: Generator matrix from [Vivenne's 2050 repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
+- `gen_prop_liu_etal_2024.csv`: Generator matrix from the [Liu et al. (2024) repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
 - This data seems to come from a variety of sources, as described in the 2019 paper. A basic list of generator names and lats/lons is given on the [NYISO website](http://mis.nyiso.com/public/) but this is appended with additional information.
 - These two csv files don't really agree -- some generators can be matched across the files (mainly hydro and nuclear) but even then there are differences in generation parameters. The import "generators" do not match. 
 
