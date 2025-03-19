@@ -40,7 +40,7 @@ class MultiZoneLoadPredictor:
         self.zones = None
         self.zone_columns = None
         
-    def preprocess_data(self, temp_data, load_data, temp_varname='T2C'):
+    def preprocess_data(self, temp_data, load_data, lags = [1,2], temp_varname='T2C'):
         """
         Preprocess the temperature and load data for all zones.
         
@@ -105,28 +105,26 @@ class MultiZoneLoadPredictor:
         
         # Create previous day average load features for each zone
         for zone in self.zones:
-            # Group by date and calculate daily average for each zone
-            zone_daily_avg = data.groupby('date')[zone].mean().reset_index()
-            zone_daily_avg['prev_date'] = pd.to_datetime(zone_daily_avg['date']) + timedelta(days=1)
-            zone_daily_avg = zone_daily_avg.rename(columns={zone: f'prev_day_avg_{zone}'})
+            for lag in lags:
+                # Group by date and calculate daily average for each zone
+                zone_daily_avg = data.groupby('date')[zone].mean().reset_index()
+                zone_daily_avg[f'lag{lag}_date'] = pd.to_datetime(zone_daily_avg['date']) + timedelta(days=lag)
+                zone_daily_avg = zone_daily_avg.rename(columns={zone: f'lag{lag}_avg_{zone}'})
             
-            # Merge with previous day's average
-            data['date'] = pd.to_datetime(data['date'])
-            data = pd.merge(
-                data, 
-                zone_daily_avg[['prev_date', f'prev_day_avg_{zone}']],
-                left_on='date', 
-                right_on='prev_date', 
-                how='left'
-            )
-            data = data.drop(columns=['prev_date'], errors='ignore')
+                # Merge with previous day's average
+                data['date'] = pd.to_datetime(data['date'])
+                data = pd.merge(
+                    data, 
+                    zone_daily_avg[[f'lag{lag}_date', f'lag{lag}_avg_{zone}']],
+                    left_on='date',
+                    right_on=f'lag{lag}_date', 
+                    how='left'
+                )
+                data = data.drop(columns=[f'lag{lag}_date'], errors='ignore')
             
-            # Fill missing values for the first day with the zone's mean
-            if data[f'prev_day_avg_{zone}'].isna().any():
-                data[f'prev_day_avg_{zone}'] = data[f'prev_day_avg_{zone}'].fillna(data[zone].mean())
-        
-        # Drop unnecessary columns
-        data = data.drop(columns=['prev_date'], errors='ignore')
+                # Fill missing values for the first day with the zone's mean
+                if data[f'lag{lag}_avg_{zone}'].isna().any():
+                    data[f'lag{lag}_avg_{zone}'] = data[f'lag{lag}_avg_{zone}'].fillna(data[zone].mean())
         
         return data
     
@@ -147,13 +145,13 @@ class MultiZoneLoadPredictor:
             Multi-zone target matrix
         """
         # Basic temporal features
-        base_features = ['day_of_week', 'day_of_year']
+        base_features = ['hour', 'day_of_year']
         
         # Temperature features for each zone
         temp_features = [col for col in data.columns if col.startswith(f'{temp_varname}_')]
         
         # Previous day average load features
-        prev_load_features = [col for col in data.columns if col.startswith('prev_day_avg_')]
+        prev_load_features = [col for col in data.columns if col.startswith('lag')]
         
         # Combine all features
         feature_cols = base_features + temp_features + prev_load_features
@@ -164,7 +162,7 @@ class MultiZoneLoadPredictor:
         
         return X, y
     
-    def train(self, temp_data, load_data, test_split=0.2, temp_varname='T2C', random_state=42):
+    def train(self, temp_data, load_data, test_split=0.2, temp_varname='T2C', lags=[1,2], random_state=42):
         """
         Train the model to predict loads for all zones simultaneously.
         
@@ -245,15 +243,14 @@ class MultiZoneLoadPredictor:
         metrics['overall'] = overall_metrics
 
         # Store test results and metrics for visualization
-        self.test_results = {
-            'y_true': y_test,
+        self.results = {
+            'y_true': y_test.to_numpy(),
             'y_pred': y_pred_test,
             'test_datetimes': data[split_idx]['datetime'].to_numpy(),
             'test_temps': data[split_idx][[f"{temp_varname}_{zone}" for zone in self.zone_columns]].to_numpy(),
             'metrics': metrics,
             'feature_names': X.columns.tolist()
         }
-        self.metrics = metrics
         
         return metrics
     
@@ -299,10 +296,10 @@ class MultiZoneLoadPredictor:
         dict
             Evaluation metrics by zone
         """
-        if not hasattr(self, 'test_results'):
+        if not hasattr(self, 'results'):
             raise ValueError("Model has not been trained yet")
         
-        return self.test_results['metrics']
+        return self.results['metrics']
     
     def plot_results(self, zone, filepath=None):
         """
@@ -313,23 +310,28 @@ class MultiZoneLoadPredictor:
         zones : list of str, optional
             zones to plot. If None, plots all zones.
         """
-        if not hasattr(self, 'test_results'):
+        if not hasattr(self, 'results'):
             raise ValueError("Model has not been trained yet")
         
         # Get required data
         zone_idx = self.zone_columns.index(zone)
-        y_true = self.test_results['y_true'][zone]
-        y_pred = self.test_results['y_pred'][:, zone_idx]
-        temp = self.test_results['test_temps'][:, zone_idx]
-        # datetimes = self.test_results['test_datetimes']
+        y_true = self.results['y_true'][:, zone_idx]
+        y_pred = self.results['y_pred'][:, zone_idx]
+        temp = self.results['test_temps'][:, zone_idx]
+        # Drop zeros for plot
+        inds = y_true > 0
+        y_true = y_true[inds]
+        y_pred = y_pred[inds]
+        temp = temp[inds]
+        # datetimes = self.results['test_datetimes']
         
         fig, axs = plt.subplots(3,1, figsize=(8,8))
         fig.suptitle(f"Actual vs Predicted Load for Zone {zone}")
 
         # Timeseries plot
         ax=axs[0]
-        ax.plot(y_true, label='Actual')
-        ax.plot(y_pred, label='Prediction')
+        ax.plot(y_true, label='Actual', alpha=0.75)
+        ax.plot(y_pred, label='Prediction', alpha=0.75)
         ax.set_xlabel('Hour')
         ax.set_ylabel('Load (MW)')
         ax.grid(alpha=0.4)
@@ -363,18 +365,18 @@ class MultiZoneLoadPredictor:
         """
         Plot feature importance for all zones (if the model supports it).
         """
-        if not hasattr(self, 'test_results'):
+        if not hasattr(self, 'results'):
             raise ValueError("Model has not been trained yet")
         
         # Check if the model has feature_importances_ attribute
         if hasattr(self.model, 'feature_importances_'):
             # Direct access for RandomForestRegressor
             importances = self.model.feature_importances_
-            feature_names = self.test_results['feature_names']
+            feature_names = self.results['feature_names']
         elif self.model_type == "random_forest":
             # Direct access for RandomForestRegressor
             importances = self.model.feature_importances_
-            feature_names = self.test_results['feature_names']
+            feature_names = self.results['feature_names']
         elif hasattr(self.model, 'estimators_'):
             # For MultiOutputRegressor, get average importance across all outputs
             all_importances = []
@@ -384,7 +386,7 @@ class MultiZoneLoadPredictor:
             
             if all_importances:
                 importances = np.mean(all_importances, axis=0)
-                feature_names = self.test_results['feature_names']
+                feature_names = self.results['feature_names']
             else:
                 print("Model doesn't support feature importance visualization")
                 return
@@ -414,7 +416,7 @@ class MultiZoneLoadPredictor:
         filepath : str, optional
             The filepath to save the model to.
         """
-        if not hasattr(self, 'test_results'):
+        if not hasattr(self, 'results'):
             raise ValueError("Model has not been trained yet")
         
         model_data = {
@@ -422,7 +424,7 @@ class MultiZoneLoadPredictor:
             'scaler': self.scaler,
             'zones': self.zones,
             'zone_columns': self.zone_columns,
-            'test_results': self.test_results,
+            'results': self.results,
             'model_type': self.model_type
         }
         
@@ -450,8 +452,7 @@ class MultiZoneLoadPredictor:
         self.scaler = model_data['scaler']
         self.zones = model_data['zones']
         self.zone_columns = model_data['zone_columns']
-        self.test_results = model_data['test_results']
-        self.metrics = model_data['metrics']
+        self.results = model_data['results']
         self.model_type = model_data.get('model_type', 'custom')
         
         print(f"Model loaded from {filepath}")
