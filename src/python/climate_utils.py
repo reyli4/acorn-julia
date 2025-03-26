@@ -1,6 +1,6 @@
-import salem
 import geopandas as gpd
 import pandas as pd
+import salem
 
 from python.utils import project_path
 
@@ -18,8 +18,8 @@ def tgw_to_zones(
 
     # Read TGW
     tgw = salem.open_wrf_dataset(tgw_file_path)[tgw_vars]
-    tgw = tgw.where((tgw.lat > 40) & (tgw.lon > -80), drop=True) # subset NYS
-    
+    tgw = tgw.where((tgw.lat > 40) & (tgw.lon > -80), drop=True)  # subset NYS
+
     tgw_crs = tgw.pyproj_srs
     geometry = tgw.salem.grid.to_geometry().geometry
 
@@ -35,16 +35,19 @@ def tgw_to_zones(
     tgw_df = tgw.to_dataframe().reset_index()
 
     # Merge
-    intersection = pd.merge(tgw_df[['time', 'lat', 'lon'] + tgw_vars],
-                            intersection_single[['ZONE', 'lat', 'lon', 'geometry']], 
-                            how = 'inner', on=['lat', 'lon'])
-    intersection = gpd.GeoDataFrame(intersection, geometry=intersection['geometry'])
+    intersection = pd.merge(
+        tgw_df[["time", "lat", "lon"] + tgw_vars],
+        intersection_single[["ZONE", "lat", "lon", "geometry"]],
+        how="inner",
+        on=["lat", "lon"],
+    )
+    intersection = gpd.GeoDataFrame(intersection, geometry=intersection["geometry"])
 
     # Area weighting
     intersection["area"] = intersection.area
-    intersection["weight"] = (intersection["area"] / 
-                    intersection[["ZONE", 'time', "area"]]
-                    .groupby(["ZONE", 'time']).area.transform("sum"))
+    intersection["weight"] = intersection["area"] / intersection[
+        ["ZONE", "time", "area"]
+    ].groupby(["ZONE", "time"]).area.transform("sum")
 
     # Compute area-weighted average
     out = (
@@ -55,4 +58,4 @@ def tgw_to_zones(
         .sum()
     )
 
-    return out.rename(columns={'ZONE':'zone'})
+    return out.rename(columns={"ZONE": "zone"})

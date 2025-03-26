@@ -1,13 +1,15 @@
 from glob import glob
 
 import cartopy.crs as ccrs
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import salem
 import xarray as xr
+from scipy.optimize import minimize_scalar
 
-from python.utils import nrel_sind_path
+from python.utils import nrel_sind_path, project_path, zone_names
 
 
 def read_all_sind():
@@ -106,37 +108,17 @@ def calculate_solar_power(
     return P_DC
 
 
-def get_solar_correction_factors(
+def prepare_solar_data(
     climate_path,
     temperature_var,
     shortwave_var,
-    sind_site_type,
+    sind_site_type=None,
     lat_name="lat",
     lon_name="lon",
     curvilinear=False,
-    lookup_cols=["dayofyear", "hour"],
 ):
     """
-    Calculates solar power correction factors from climate data.
-
-    Parameters:
-    -----------
-    climate_path : str
-        Path pattern to the climate data
-    temperature_var : str
-        Name of the temperature variable (must be degC)
-    shortwave_var : str
-        Name of the shortwave variable (must be W/m2)
-    sind_site_type : str
-        Type of SIND site
-    lat_name : str
-        Name of the latitude variable
-    lon_name : str
-        Name of the longitude variable
-    curvilinear : bool
-        Whether the grid is curvilinear
-    lookup_cols : list
-        Columns to use for the lookup table
+    Gather input data for solar power generation.
     """
     # Read climate data
     ds = []
@@ -169,10 +151,10 @@ def get_solar_correction_factors(
 
         ds_sel = ds.sel({lon_name: x, lat_name: y}, method="nearest")
 
-        # Estimate solar generation
+        # Take only the shortwave and temperature data
         df = (
-            calculate_solar_power(ds_sel[shortwave_var], ds_sel[temperature_var])
-            .to_dataframe(name="sim_power_norm")
+            ds_sel[[shortwave_var, temperature_var, "time"]]
+            .to_dataframe()
             .reset_index()
         )
 
@@ -194,88 +176,227 @@ def get_solar_correction_factors(
     df_all = pd.merge(
         df_all, df_sind.reset_index(), on=["datetime", "sind_lat", "sind_lon"]
     )
+
+    # Subset to site type
+    if sind_site_type is not None:
+        df_all = df_all[df_all["solar_type"] == sind_site_type]
+
+    # Drop duplicates
     df_all = (
-        df_all[df_all["solar_type"] == sind_site_type]
-        .set_index(["sind_lat", "sind_lon", "datetime"])
+        df_all.set_index(["sind_lat", "sind_lon", "datetime"])
         .sort_index()
         .reset_index()
-    )
+    ).drop_duplicates()
 
     # Add datetime info
     df_all["month"] = df_all["datetime"].dt.month
     df_all["dayofyear"] = df_all["datetime"].dt.dayofyear
     df_all["hour"] = df_all["datetime"].dt.hour
 
-    # Create lookup table: average bias by month and hour
-    df_all["bias"] = df_all["actual_power_norm"] - df_all["sim_power_norm"]
-    correction_lookup = (
-        df_all.groupby(lookup_cols)["bias"].mean().to_frame(name="bias_correction")
-    )
-
-    # Apply correction
-    df_all = pd.merge(df_all, correction_lookup.reset_index(), on=lookup_cols)
-    df_all["sim_power_norm_corrected"] = (
-        df_all["sim_power_norm"] + df_all["bias_correction"]
-    )
-    # Set negative values to zero
-    df_all["sim_power_norm_corrected"] = df_all["sim_power_norm_corrected"].clip(
-        lower=0.0
-    )
-
     # Return
     return df_all
 
 
-def plot_solar_correction_fit(df, x_col, y_col, x_name=None, y_name=None):
+def get_solar_correction_factors(
+    df,
+    temperature_var,
+    shortwave_var,
+    beta,
+    lookup_cols=["dayofyear", "hour"],
+):
+    """
+    Calculates solar power correction factors from climate data.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        DataFrame containing climate data
+    lookup_cols : list
+        Columns to use for the lookup table
+    """
+    # Calculate solar power
+    df["sim_power_norm"] = calculate_solar_power(
+        df[shortwave_var], df[temperature_var], beta=beta
+    )
+
+    # Create lookup table: average bias by doy and hour
+    df["bias"] = df["actual_power_norm"] - df["sim_power_norm"]
+    correction_lookup = (
+        df.groupby(lookup_cols)["bias"].mean().to_frame(name="bias_correction")
+    )
+
+    # Apply correction
+    df = pd.merge(df, correction_lookup.reset_index(), on=lookup_cols)
+    df["sim_power_norm_corrected"] = df["sim_power_norm"] + df["bias_correction"]
+    # Set negative values to zero
+    df["sim_power_norm_corrected"] = df["sim_power_norm_corrected"].clip(lower=0.0)
+
+    # Return
+    return df
+
+
+def _beta_objective(
+    beta, df, temperature_var, shortwave_var, lookup_cols=["dayofyear", "hour"]
+):
+    """
+    Objective function for the beta optimization.
+    """
+    # Calculate solar power with bias correction
+    df = get_solar_correction_factors(
+        df, temperature_var, shortwave_var, beta, lookup_cols=lookup_cols
+    )
+
+    # Calculate RMSE
+    rmse = np.sqrt(
+        np.mean((df["sim_power_norm_corrected"] - df["actual_power_norm"]) ** 2)
+    )
+
+    # Return
+    return rmse
+
+
+def optimize_beta(
+    df, temperature_var, shortwave_var, lookup_cols=["dayofyear", "hour"]
+):
+    """
+    Objective function for the beta optimization.
+    """
+
+    # Objective function
+    def _objective(beta, df, temperature_var, shortwave_var, lookup_cols):
+        # Calculate solar power with bias correction
+        df = get_solar_correction_factors(
+            df, temperature_var, shortwave_var, beta, lookup_cols=lookup_cols
+        )
+
+        # Calculate RMSE
+        rmse = np.sqrt(
+            np.mean((df["sim_power_norm_corrected"] - df["actual_power_norm"]) ** 2)
+        )
+
+        # Return
+        return rmse
+
+    # Optimize
+    res = minimize_scalar(
+        _objective,
+        bounds=(0.01, 5.0),
+        args=(df, temperature_var, shortwave_var, lookup_cols),
+        method="bounded",
+    )
+
+    # Return
+    return res.x
+
+
+def merge_to_zones(
+    df,
+    nyiso_zone_shp_path: str = f"{project_path}/data/nyiso/shapefiles/NYISO_Load_Zone_Dissolved.shp",
+):
+    """
+    Merge the dataframe to the NYISO zones.
+    """
+    # Read NYISO zones
+    nyiso_gdf = gpd.read_file(nyiso_zone_shp_path)
+
+    # Merge
+    df_gdf = gpd.GeoDataFrame(
+        df, geometry=gpd.points_from_xy(df.sind_lon, df.sind_lat), crs="EPSG:4326"
+    )
+
+    # Merge
+    df_gdf = gpd.sjoin(df_gdf, nyiso_gdf, how="inner", predicate="within")
+
+    # Return
+    return df_gdf
+
+
+def plot_solar_correction_fit(
+    df, x_col, y_col, x_name=None, y_name=None, daily=False, zonal=False
+):
     """
     Plot the solar correction fit.
     """
     # For nicer plotting
-    months = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-    ]
+    months = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec",
+    }
+
+    # Daily averages if selected
+    if daily:
+        df = (
+            df.groupby([df["datetime"].dt.date, "sind_lat", "sind_lon"])
+            .mean(numeric_only=True)
+            .reset_index()
+        )
+
+    # Zonal averages if selected
+    if zonal:
+        df = merge_to_zones(df)
+
+    # Loop through counter variables
+    if zonal:
+        counter_var = "ZONE"
+    else:
+        counter_var = "month"
 
     # Plot
-    fig, axs = plt.subplots(4, 3, figsize=(10, 10))
+    if zonal:
+        n_zones = len(df[counter_var].unique())
+        n_cols = 3
+        n_rows = int(np.ceil(n_zones / n_cols))
+    else:
+        n_cols = 3
+        n_rows = 4
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(10, n_rows * 2.5))
     axs = axs.flatten()
 
-    # Loop through months
-    for idm in range(12):
-        month = idm + 1
-        df_month = df[df["month"] == month]
-        df_month.plot(
+    # Loop through counter variables
+    for idc, counter in enumerate(df[counter_var].unique()):
+        df_counter = df[df[counter_var] == counter]
+        df_counter.plot(
             y=y_col,
             x=x_col,
             kind="scatter",
             s=3,
-            ax=axs[idm],
+            ax=axs[idc],
             alpha=0.5,
         )
         # Add fit info
-        r2 = np.corrcoef(df_month.dropna()[x_col], df_month.dropna()[y_col])[0, 1] ** 2
+        r2 = (
+            np.corrcoef(df_counter.dropna()[x_col], df_counter.dropna()[y_col])[0, 1]
+            ** 2
+        )
         rmse = np.sqrt(
-            np.mean((df_month.dropna()[x_col] - df_month.dropna()[y_col]) ** 2)
+            np.mean((df_counter.dropna()[x_col] - df_counter.dropna()[y_col]) ** 2)
         )
         # Add 1:1 line
-        axs[idm].plot(
-            [0, 1], [0, 1], transform=axs[idm].transAxes, ls="--", color="black"
+        axs[idc].plot(
+            [0, 1], [0, 1], transform=axs[idc].transAxes, ls="--", color="black"
         )
         # Tidy
-        axs[idm].set_title(f"{months[idm]} (R$^2$: {r2:.2f}, RMSE: {rmse:.2f})")
-        axs[idm].grid(alpha=0.5)
-        axs[idm].set_xlabel("")
-        axs[idm].set_ylabel("")
+        if zonal:
+            counter_names = zone_names
+        else:
+            counter_names = months
+
+        axs[idc].set_title(
+            f"{counter_names[counter]} (R$^2$: {r2:.2f}, RMSE: {rmse:.2f})"
+        )
+        axs[idc].grid(alpha=0.5)
+        axs[idc].set_xlabel("")
+        axs[idc].set_ylabel("")
 
     fig.supxlabel(x_name if x_name is not None else x_col)
     fig.supylabel(y_name if y_name is not None else y_col)
