@@ -235,26 +235,6 @@ def get_solar_correction_factors(
     return df
 
 
-def _beta_objective(
-    beta, df, temperature_var, shortwave_var, lookup_cols=["dayofyear", "hour"]
-):
-    """
-    Objective function for the beta optimization.
-    """
-    # Calculate solar power with bias correction
-    df = get_solar_correction_factors(
-        df, temperature_var, shortwave_var, beta, lookup_cols=lookup_cols
-    )
-
-    # Calculate RMSE
-    rmse = np.sqrt(
-        np.mean((df["sim_power_norm_corrected"] - df["actual_power_norm"]) ** 2)
-    )
-
-    # Return
-    return rmse
-
-
 def optimize_beta(
     df, temperature_var, shortwave_var, lookup_cols=["dayofyear", "hour"]
 ):
@@ -264,10 +244,15 @@ def optimize_beta(
 
     # Objective function
     def _objective(beta, df, temperature_var, shortwave_var, lookup_cols):
-        # Calculate solar power with bias correction
-        df = get_solar_correction_factors(
-            df, temperature_var, shortwave_var, beta, lookup_cols=lookup_cols
-        )
+        # Calculate solar power (with bias correction if specified)
+        if lookup_cols is not None:
+            df = get_solar_correction_factors(
+                df, temperature_var, shortwave_var, beta, lookup_cols=lookup_cols
+            )
+        else:
+            df["sim_power_norm_corrected"] = calculate_solar_power(
+                df[shortwave_var], df[temperature_var], beta=beta
+            )
 
         # Calculate RMSE
         rmse = np.sqrt(
