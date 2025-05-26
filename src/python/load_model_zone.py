@@ -164,11 +164,11 @@ class LoadPredictor:
         y = y.loc[data.index]
 
         # Train/test split - using chronological split for time series data
-        if type(test_split)is float:
+        if type(test_split) is float:
             split_idx = int(len(X) * (1 - test_split))
             X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
             y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
-        elif type(test_split)is list:
+        elif type(test_split) is list:
             split_idx = data["year"].isin(test_split)
             X_train, X_test = X[~split_idx], X[split_idx]
             y_train, y_test = y[~split_idx], y[split_idx]
@@ -195,7 +195,7 @@ class LoadPredictor:
             "test_r2": r2_score(y_test, y_pred_test),
             "train_rmse": np.sqrt(mean_squared_error(y_train, y_pred_train)),
             "train_mae": mean_absolute_error(y_train, y_pred_train),
-            "train_r2": r2_score(y_train, y_pred_train)
+            "train_r2": r2_score(y_train, y_pred_train),
         }
 
         # Store model and preprocessor for this zone
@@ -306,41 +306,41 @@ class LoadPredictor:
             raise ValueError(f"Model for zone {zone} has not been trained yet")
 
         # Drop zeros for plot
-        df = self.zone_models[zone]['test_results']
-        df = df[df['y_true'] > 0]
+        df = self.zone_models[zone]["test_results"]
+        df = df[df["y_true"] > 0]
 
-        fig, axs = plt.subplots(3,1, figsize=(8,8))
+        fig, axs = plt.subplots(3, 1, figsize=(8, 8))
         fig.suptitle(f"Actual vs Predicted Load for Zone {zone}")
 
         # Timeseries plot
-        ax=axs[0]
-        ax.plot(df['y_true'], label='Actual')
-        ax.plot(df['y_pred'], label='Prediction')
-        ax.set_xlabel('Hour')
-        ax.set_ylabel('Load (MW)')
+        ax = axs[0]
+        ax.plot(df["y_true"], label="Actual")
+        ax.plot(df["y_pred"], label="Prediction")
+        ax.set_xlabel("Hour")
+        ax.set_ylabel("Load (MW)")
         ax.grid(alpha=0.4)
         ax.legend()
 
         # Temperature scatter plot
-        ax=axs[1]
-        ax.scatter(df['temp'], df['y_true'], label='Actual', s=5, alpha=0.5)
-        ax.scatter(df['temp'], df['y_pred'], label='Prediction', s=5, alpha=0.5)
-        ax.set_xlabel('Zonal temperature (C)')
-        ax.set_ylabel('Load (MW)')
+        ax = axs[1]
+        ax.scatter(df["temp"], df["y_true"], label="Actual", s=5, alpha=0.5)
+        ax.scatter(df["temp"], df["y_pred"], label="Prediction", s=5, alpha=0.5)
+        ax.set_xlabel("Zonal temperature (C)")
+        ax.set_ylabel("Load (MW)")
         ax.grid(alpha=0.4)
         ax.legend()
 
         # Scatter plot
-        ax=axs[2]
-        ax.scatter(df['y_true'], df['y_pred'], s=5, alpha=0.5)
-        ax.plot([0, 1], [0, 1], transform=ax.transAxes, ls='--', color='black')
-        ax.set_xlabel('Actual load (MW)')
-        ax.set_ylabel('Predicted load (MW)')
+        ax = axs[2]
+        ax.scatter(df["y_true"], df["y_pred"], s=5, alpha=0.5)
+        ax.plot([0, 1], [0, 1], transform=ax.transAxes, ls="--", color="black")
+        ax.set_xlabel("Actual load (MW)")
+        ax.set_ylabel("Predicted load (MW)")
         ax.grid(alpha=0.4)
 
         plt.tight_layout()
         if filepath is not None:
-            plt.savefig(filepath, bbox_inches='tight')
+            plt.savefig(filepath, bbox_inches="tight")
         else:
             plt.show()
 

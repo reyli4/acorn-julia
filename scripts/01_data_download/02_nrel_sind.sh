@@ -2,7 +2,7 @@
 
 ######################################################################
 # NREL SIND data from https://www.nrel.gov/grid/solar-power-data.html
-# NOTE: Actual is real power output, DA is day ahead forecase, 
+# NOTE: Actual is real power output, DA is day ahead forecast, 
 # HA4 is 4 hour ahead forecast
 ######################################################################
 
