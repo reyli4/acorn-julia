@@ -459,7 +459,7 @@ def get_stability_coefficients(
 # See Table 2 in https://docs.nrel.gov/docs/fy14osti/61714.pdf
 ##################################################################
 df_power_curves = pd.read_csv(
-    f"{project_path}/data/nrel_power_curves.csv",
+    f"{project_path}/data/wind/nrel_power_curves.csv",
 )
 
 

@@ -1,33 +1,37 @@
 #!/bin/bash
 #SBATCH --nodes=1                      # Number of nodes
 #SBATCH --ntasks-per-node=1            # Number of tasks per node
-#SBATCH --mem=3GB                      # Memory per node (adjust as needed)
-#SBATCH --time=100:00:00                # Maximum run time (adjust as needed)
+#SBATCH --mem=3GB                      # Memory per node
+#SBATCH --time=02:00:00                # Maximum run time
+
+
+###################################
+# Download NREL WTK data
+# We use the techno-economic release
+# More info: https://www.nrel.gov/grid/wind-toolkit
+###################################
 
 echo "Job started on `hostname` at `date`"
 
-############################################
-# Save path
-cd /home/fs01/dcl257/data/nrel-wtk
-############################################
+cd /home/fs01/dcl257/projects/acorn-julia/data/nrel/wtk
 
-# Download all years
-base_url="https://nrel-pds-wtk.s3.amazonaws.com/conus/v1.0.0"
+PREFIX="https://nrel-pds-wtk.s3.amazonaws.com/wtk-techno-economic/pywtk-data/met_data"
+SAVE_DIR="met_data"
+CSV_FILE="wtk_site_metadata.csv"
 
-for year in {2007..2013}; do
-    url="${base_url}/${year}/wtk_conus_${year}_100m.h5"
-    
-    echo "Starting download for year ${year}..."
-    
-    until wget -c --tries=0 --retry-connrefused --timeout=30 --read-timeout=30 --waitretry=30 "$url"
-    do
-        echo "Download failed for ${year}. Retrying in 60 seconds..."
-        sleep 60
-    done
-    
-    echo "Successfully downloaded data for ${year}"
-done
+# Process each line of the CSV
+while IFS="," read -r id lon lat state county col6 col7 col8 col9 col10 col11 filepath; do
+    # Check if state is New York
+    if [ "$state" = "New York" ]; then
+        echo "Found New York entry: $id"
 
-echo "All downloads completed!"
+        # Extract just the filename portion (after the last slash)
+        filepath=$(echo "$filepath" | awk -F, '{print $NF}' | tr -d '\r\n')
+        filename=$(basename "$filepath")
+
+        # Download the file
+        wget -nc "${PREFIX}/$filepath" -O "${SAVE_DIR}/$filename"
+    fi
+done < "$CSV_FILE"
 
 echo "Job Ended at `date`"

@@ -5,6 +5,12 @@ data/data_tmp/
 data/out/
 data/climate/
 data/models/
+data/nrel/
+data/hydro/
+data/load/
+data/solar/
+data/wind/
+data/genX/
 data/nyiso/historical_load/extracted/
 data/nyiso/historical_load/zipped/
 out/

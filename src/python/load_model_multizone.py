@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from datetime import timedelta
 import pickle
 import os
+from python.utils import project_path
 
 
 class MultiZoneLoadPredictor:
@@ -755,3 +756,60 @@ def load_and_prepare_data(temp_file, load_file):
     except Exception as e:
         print(f"Error loading data: {e}")
         raise
+
+
+def baseline_load_to_bus(predictor, temp_data_path, temp_varname="T2C"):
+    """
+    Disaggregate baseline load to bus level.
+
+    Parameters:
+    -----------
+    predictor : MultiZoneLoadPredictor
+        Trained model
+    temp_data : DataFrame
+        Temperature data
+    """
+    # Get future predictions
+    temp_data, _ = load_and_prepare_data(temp_data_path, None)
+
+    future_predictions = predictor.predict_future_loads(
+        temp_data=temp_data,
+        temp_varname=temp_varname,
+    )
+
+    # Get bus load data
+    df_npcc = pd.read_csv(f"{project_path}/data/grid/npcc_new.csv")
+
+    # Make sure sum of load ratios > 0.
+    mask = df_npcc.groupby("zoneID")["sumLoadP0"].transform("sum") == 0
+    df_npcc.loc[mask, "sumLoadP0"] = 0.01
+
+    # Get zonal ratios
+    df_npcc = pd.merge(
+        df_npcc,
+        pd.DataFrame(
+            data={"zonal_sumLoadP0": df_npcc.groupby("zoneID")["sumLoadP0"].sum()}
+        ),
+        on="zoneID",
+        how="outer",
+    )
+    df_npcc["ratio"] = df_npcc["sumLoadP0"] / df_npcc["zonal_sumLoadP0"]
+    ratios = df_npcc[["busIdx", "ratio", "zoneID"]].rename(
+        columns={"busIdx": "bus_id", "zoneID": "zone"}
+    )
+
+    # Merge predictions with bus load data
+    df_out = pd.merge(
+        future_predictions.melt(
+            id_vars=["datetime"], var_name="zone", value_name="zonal_load_MW"
+        ),
+        ratios,
+        on="zone",
+        how="outer",
+    )
+    df_out["load_MW"] = df_out["zonal_load_MW"] * df_out["ratio"]
+
+    # Drop ratio
+    df_out = df_out.drop(columns=["ratio"])
+
+    return df_out
