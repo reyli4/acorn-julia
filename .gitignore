@@ -15,6 +15,9 @@ data/nyiso/historical_load/extracted/
 data/nyiso/historical_load/zipped/
 out/
 figs/
+sandbox_julia.ipynb
+sandbox_python.ipynb
 build/
+matlab_tests/
 data_tmp/
 model.txt
