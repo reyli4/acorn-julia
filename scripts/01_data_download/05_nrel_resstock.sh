@@ -25,6 +25,9 @@ echo "Starting download of NREL building stock data..."
 echo "Output directory: $OUTPUT_DIR"
 echo ""
 
+# First download the metadata
+wget -q --show-progress -P "$OUTPUT_DIR" "https://oedi-data-lake.s3.amazonaws.com/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2024/resstock_amy2018_release_2/metadata/baseline.parquet"
+
 # Loop through upgrade numbers (0 to 16)
 for upgrade in {0..16}; do
     echo "Processing upgrade $upgrade..."

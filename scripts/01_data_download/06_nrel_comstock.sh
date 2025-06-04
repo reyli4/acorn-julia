@@ -34,6 +34,10 @@ echo "Starting download of NREL commercial building stock data..."
 echo "Output directory: $OUTPUT_DIR"
 echo ""
 
+# First download the metadata
+
+
+
 # Loop through upgrade numbers (0 to 39)
 for upgrade in {0..39}; do
     echo "Processing upgrade $upgrade..."
