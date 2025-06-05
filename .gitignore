@@ -11,8 +11,8 @@ data/load/
 data/solar/
 data/wind/
 data/genX/
-data/nyiso/historical_load/extracted/
-data/nyiso/historical_load/zipped/
+data/nys/
+data/nyiso/
 out/
 figs/
 sandbox_julia.ipynb

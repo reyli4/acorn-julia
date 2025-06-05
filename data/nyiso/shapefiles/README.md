@@ -1,1 +1,0 @@
-Shapefiles taken from: https://github.com/boyuan276/NYgrid-python. Original source unclear.

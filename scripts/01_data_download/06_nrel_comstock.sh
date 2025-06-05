@@ -2,11 +2,11 @@
 
 # NREL Commercial Building Stock Data Download Script
 # Downloads timeseries aggregates for NY state
-# We are using the 2024_2 release
+# We are using the 2024_1 release
 # More info: https://comstock.nrel.gov/page/datasets
 
 # Base URL
-BASE_URL="https://oedi-data-lake.s3.amazonaws.com/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2024/comstock_amy2018_release_2/timeseries_aggregates/by_iso_rto_region"
+BASE_URL="https://oedi-data-lake.s3.amazonaws.com/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2024/comstock_amy2018_release_1/timeseries_aggregates/by_iso_rto_region"
 
 # Array of commercial building types
 BUILDING_TYPES=(
@@ -35,8 +35,10 @@ echo "Output directory: $OUTPUT_DIR"
 echo ""
 
 # First download the metadata
+wget -q --show-progress -P "$OUTPUT_DIR" "https://oedi-data-lake.s3.amazonaws.com/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2024/comstock_amy2018_release_1/metadata/baseline.parquet"
 
-
+# Also need the measure descriptions
+wget -q --show-progress -P "$OUTPUT_DIR" "https://oedi-data-lake.s3.amazonaws.com/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2024/comstock_amy2018_release_1/measure_name_crosswalk.csv"
 
 # Loop through upgrade numbers (0 to 39)
 for upgrade in {0..39}; do
