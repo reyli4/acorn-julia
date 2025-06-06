@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from sklearn.neighbors import BallTree
 import geopandas as gpd
 import pandas as pd
@@ -65,7 +66,7 @@ month_keys = {
 ###################
 def merge_to_zones(
     df,
-    nyiso_zone_shp_path: str = f"{project_path}/data/nyiso/shapefiles/NYISO_Load_Zone_Dissolved.shp",
+    nyiso_zone_shp_path: str = f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp",
     lat_name: str = "lat",
     lon_name: str = "lon",
 ):
@@ -90,60 +91,97 @@ def merge_to_zones(
 
 
 #################################
-# Fill missing zones
+# Map GenX zones to NYISO zones
 #################################
-zone_mapping = {
-    "H": "G",
-    "I": "G",
-}
-
-
-def fill_missing_zones(df, zone_mapping=zone_mapping):
+def map_genX_zones_to_nyiso(
+    df_genX,
+    C_and_E_mapping="random",
+    G_to_I_mapping="G",
+):
     """
-    Check for missing zones (A-K) and fill them with data from specified zones.
-
-    Parameters:
-    df (pd.DataFrame): DataFrame with columns 'ZONE'
-    zone_mapping (dict): Dictionary mapping missing zones to source zones
-                        e.g., {'H': 'A', 'I': 'B'} means fill H with A's data, I with B's data
-
-    Returns:
-    pd.DataFrame: DataFrame with missing zones filled in
+    Map GenX zones to NYISO zones.
     """
+    # Tidy region column
+    df_genX["genX_zone"] = df_genX["region"].apply(lambda x: x.split("_")[-1])
 
-    # Define all expected zones
-    all_zones = list("ABCDEFGHIJK")
+    # Define mapping functions
+    if C_and_E_mapping == "random":
+        C_and_E_mapping_func = lambda x: random.choice(["C", "E"])
+    elif C_and_E_mapping == "C" or C_and_E_mapping == "E":
+        C_and_E_mapping_func = lambda x: C_and_E_mapping
+    else:
+        raise ValueError(f"Invalid mapping for {C_and_E_mapping}")
 
-    # Check which zones are present
-    present_zones = sorted(df["ZONE"].unique())
-    missing_zones = [zone for zone in all_zones if zone not in present_zones]
+    genX_to_NYSIO_zones_map = {
+        "A": lambda x: "A",
+        "B": lambda x: "B",
+        "D": lambda x: "D",
+        "F": lambda x: "F",
+        "K": lambda x: "K",
+        "C&E": C_and_E_mapping_func,
+        "G-I": lambda x: G_to_I_mapping,
+    }
 
-    # Create a copy of the original dataframe
-    df_filled = df.copy()
+    # Apply map
+    df_genX["genX_zone"] = df_genX["genX_zone"].apply(
+        lambda x: genX_to_NYSIO_zones_map[x](x)
+    )
 
-    # Fill in missing zones
-    for missing_zone in missing_zones:
-        if missing_zone in zone_mapping:
-            source_zone = zone_mapping[missing_zone]
+    return df_genX
 
-            if source_zone not in present_zones:
-                continue
 
-            # Get all data for the source zone
-            source_data = df[df["ZONE"] == source_zone].copy()
+# zone_mapping = {
+#     "H": "G",
+#     "I": "G",
+# }
 
-            # Change the zone to the missing zone
-            source_data["ZONE"] = missing_zone
 
-            # Append to the filled dataframe
-            df_filled = pd.concat([df_filled, source_data], ignore_index=True)
-        else:
-            print(f"No mapping provided for missing zone '{missing_zone}'")
+# def fill_missing_zones(df, zone_mapping=zone_mapping):
+#     """
+#     Check for missing zones (A-K) and fill them with data from specified zones.
 
-    # Sort by month, hour, and zone for better organization
-    df_filled = df_filled.sort_values(["ZONE"]).reset_index(drop=True)
+#     Parameters:
+#     df (pd.DataFrame): DataFrame with columns 'ZONE'
+#     zone_mapping (dict): Dictionary mapping missing zones to source zones
+#                         e.g., {'H': 'A', 'I': 'B'} means fill H with A's data, I with B's data
 
-    return df_filled
+#     Returns:
+#     pd.DataFrame: DataFrame with missing zones filled in
+#     """
+
+#     # Define all expected zones
+#     all_zones = list(zone_names.keys())
+
+#     # Check which zones are present
+#     present_zones = sorted(df["ZONE"].unique())
+#     missing_zones = [zone for zone in all_zones if zone not in present_zones]
+
+#     # Create a copy of the original dataframe
+#     df_filled = df.copy()
+
+#     # Fill in missing zones
+#     for missing_zone in missing_zones:
+#         if missing_zone in zone_mapping:
+#             source_zone = zone_mapping[missing_zone]
+
+#             if source_zone not in present_zones:
+#                 continue
+
+#             # Get all data for the source zone
+#             source_data = df[df["ZONE"] == source_zone].copy()
+
+#             # Change the zone to the missing zone
+#             source_data["ZONE"] = missing_zone
+
+#             # Append to the filled dataframe
+#             df_filled = pd.concat([df_filled, source_data], ignore_index=True)
+#         else:
+#             print(f"No mapping provided for missing zone '{missing_zone}'")
+
+#     # Sort by month, hour, and zone for better organization
+#     df_filled = df_filled.sort_values(["ZONE"]).reset_index(drop=True)
+
+#     return df_filled
 
 
 #########################
@@ -239,11 +277,11 @@ def nearest_neighbor_lat_lon(
     # If zone matching is requested, process each point individually by zone
     if match_zones:
         for idx, left_row in origin_gdf.iterrows():
-            left_zone = left_row["ZONE"]
+            left_zone = left_row["zone"]
 
             # Filter right_gdf to only include points with matching zone
             matching_right = (
-                candidate_gdf[candidate_gdf["ZONE"] == left_zone]
+                candidate_gdf[candidate_gdf["zone"] == left_zone]
                 .copy()
                 .reset_index(drop=True)
             )
@@ -274,7 +312,7 @@ def nearest_neighbor_lat_lon(
 
             # Get the closest point information
             closest_point = matching_right.iloc[closest_idx[0]]
-            result = pd.concat([left_row, closest_point[["BUS_I"]]])
+            result = pd.concat([left_row, closest_point[["bus_id"]]])
             result_rows.append(result)
 
             if return_dist:
@@ -308,9 +346,9 @@ def nearest_neighbor_lat_lon(
         )
 
         # Return points from right GeoDataFrame that are closest to points in left GeoDataFrame
-        result_bus_ids = right.loc[closest]["BUS_I"].to_numpy()
+        result_bus_idds = right.loc[closest]["bus_id"].to_numpy()
         result_rows = origin_gdf.copy()
-        result_rows["BUS_I"] = result_bus_ids
+        result_rows["bus_id"] = result_bus_idds
         distances = dist
 
     # Create the final GeoDataFrame

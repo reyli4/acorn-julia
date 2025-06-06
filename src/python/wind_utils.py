@@ -9,6 +9,9 @@ import salem
 import cartopy.crs as ccrs
 from scipy.optimize import minimize_scalar
 from scipy import interpolate
+import math
+from shapely.geometry import Point
+
 from python.utils import (
     nrel_wtk_path,
     merge_to_zones,
@@ -643,3 +646,61 @@ def calculate_wind_timeseries_from_genX(
 
     # Return
     return df_out
+
+
+def generate_offshore_wind_sites(
+    target_zone,
+    full_gdf,
+    n_points,
+    buffer=1000,
+    min_distance=10000,
+    max_distance=40000,
+    bearing_range=(125, 145),
+    crs="EPSG:32618",
+    max_attempts=100,
+):
+    """
+    Generate offshore wind sites by:
+    1. Creating random points in target zone
+    2. Displacing them southeast
+    3. Ensuring they don't intersect with any original GDF geometries
+    """
+    # Update CRS
+    full_gdf = full_gdf.copy().to_crs(crs)
+    target_zone_gdf = full_gdf[full_gdf["zone"] == target_zone].copy()
+
+    zone_union = target_zone_gdf.union_all()
+    full_gdf_union = full_gdf.union_all()
+    bounds = zone_union.bounds
+    min_x, min_y, max_x, max_y = bounds
+
+    valid_sites = []
+    attempts = 0
+
+    while len(valid_sites) < n_points and attempts < max_attempts:
+        # Generate point in zone
+        x = np.random.uniform(min_x, max_x)
+        y = np.random.uniform(min_y, max_y)
+        zone_point = Point(x, y)
+
+        # Check if point is in target zone
+        if not zone_union.contains(zone_point):
+            attempts += 1
+            continue
+
+        # Displace southeast
+        distance = np.random.uniform(min_distance, max_distance)
+        bearing = np.random.uniform(bearing_range[0], bearing_range[1])
+        bearing_rad = math.radians(bearing)
+
+        new_x = zone_point.x + distance * math.sin(bearing_rad)
+        new_y = zone_point.y + distance * math.cos(bearing_rad)
+        offshore_point = Point(new_x, new_y)
+
+        # Validate offshore point doesn't intersect with any original geometry
+        if not full_gdf_union.buffer(buffer).intersects(offshore_point):
+            valid_sites.append(offshore_point)
+
+        attempts += 1
+
+    return gpd.GeoDataFrame(geometry=valid_sites)

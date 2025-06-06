@@ -949,21 +949,19 @@ def assign_loads_to_bus(
     df_meta["in.county_name"] = df_meta["in.county_name"].str.replace("NY, ", "")
 
     # Get county weights from NREL metadata
+    if stock_type == "resstock":
+        bulding_type_col = "in.geometry_building_type_recs"
+    elif stock_type == "comstock":
+        bulding_type_col = "in.comstock_building_type"
+
     df_meta_weights = (
-        df_meta.groupby(["in.county_name", "in.geometry_building_type_recs"])[
-            ["upgrade"]
-        ]
+        df_meta.groupby(["in.county_name", bulding_type_col])[["upgrade"]]
         .count()
         .reset_index()
     )
     df_meta_weights.rename(
         columns={"upgrade": "weight", "in.county_name": "county_name"}, inplace=True
     )
-
-    if stock_type == "resstock":
-        bulding_type_col = "in.geometry_building_type_recs"
-    elif stock_type == "comstock":
-        bulding_type_col = "in.comstock_building_type"
 
     df_meta_weights = df_meta_weights[
         df_meta_weights[bulding_type_col] == building_type_meta_map[building_type]

@@ -773,9 +773,9 @@ def calculate_solar_timeseries_from_genX(
     )
 
     # Assign to buses
-    gdf_bus = gpd.read_file(f"{project_path}/data/grid/gis/Bus.shp")
+    gdf_bus = gpd.read_file(f"{project_path}/data/grid/gis/Bus_clean.shp")
     gdf_genX_unique_locs = nearest_neighbor_lat_lon(
-        gdf_genX_unique_locs.rename(columns={"genX_zone": "ZONE"}),
+        gdf_genX_unique_locs.rename(columns={"genX_zone": "zone"}),
         gdf_bus,
         match_zones=match_zones,
     )
@@ -783,7 +783,7 @@ def calculate_solar_timeseries_from_genX(
     # Merge with timeseries and sum by bus
     df_out = (
         pd.merge(df, gdf_genX_unique_locs, on=["latitude", "longitude"], how="outer")
-        .groupby(["BUS_I", "datetime"])[["power_MW"]]
+        .groupby(["bus_id", "datetime"])[["power_MW"]]
         .sum()
     )
 

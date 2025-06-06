@@ -53,7 +53,8 @@ Branch Data Format:
 - `gen_prop_boyuan.csv`: Generator matrix from [Bo's python repo](https://github.com/boyuan276/NYgrid-python)
 - `gen_prop_liu_etal_2024.csv`: Generator matrix from the [Liu et al. (2024) repo](https://github.com/AndersonEnergyLab-Cornell/ny-clcpa2050)
 - This data seems to come from a variety of sources, as described in the 2019 paper. A basic list of generator names and lats/lons is given on the [NYISO website](http://mis.nyiso.com/public/) but this is appended with additional information.
-- These two csv files don't really agree -- some generators can be matched across the files (mainly hydro and nuclear) but even then there are differences in generation parameters. The import "generators" do not match. 
+- These two csv files don't really agree -- some generators can be matched across the files (mainly hydro and nuclear) but even then there are differences in generation parameters. The import "generators" do not match.
+- `gencost_prop_boyuan.csv`: Generator cost information [Bo's python repo](https://github.com/boyuan276/NYgrid-python). 
 
 Generator Data Format:
 | Column | Field | Description | Notes |
