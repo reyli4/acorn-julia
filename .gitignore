@@ -13,7 +13,7 @@ data/wind/
 data/genX/
 data/nys/
 data/nyiso/
-data/runs/
+runs/
 out/
 figs/
 sandbox_julia.ipynb
