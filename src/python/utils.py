@@ -95,6 +95,7 @@ def merge_to_zones(
 #################################
 def map_genX_zones_to_nyiso(
     df_genX,
+    genX_zone_col: str = "region",
     C_and_E_mapping="random",
     G_to_I_mapping="G",
 ):
@@ -102,7 +103,10 @@ def map_genX_zones_to_nyiso(
     Map GenX zones to NYISO zones.
     """
     # Tidy region column
-    df_genX["genX_zone"] = df_genX["region"].apply(lambda x: x.split("_")[-1])
+    if genX_zone_col == "region":
+        df_genX["genX_zone"] = df_genX["region"].apply(lambda x: x.split("_")[-1])
+    else:
+        df_genX["genX_zone"] = df_genX[genX_zone_col]
 
     # Define mapping functions
     if C_and_E_mapping == "random":
@@ -118,6 +122,7 @@ def map_genX_zones_to_nyiso(
         "D": lambda x: "D",
         "F": lambda x: "F",
         "K": lambda x: "K",
+        "J": lambda x: "J",
         "C&E": C_and_E_mapping_func,
         "G-I": lambda x: G_to_I_mapping,
     }
@@ -128,60 +133,6 @@ def map_genX_zones_to_nyiso(
     )
 
     return df_genX
-
-
-# zone_mapping = {
-#     "H": "G",
-#     "I": "G",
-# }
-
-
-# def fill_missing_zones(df, zone_mapping=zone_mapping):
-#     """
-#     Check for missing zones (A-K) and fill them with data from specified zones.
-
-#     Parameters:
-#     df (pd.DataFrame): DataFrame with columns 'ZONE'
-#     zone_mapping (dict): Dictionary mapping missing zones to source zones
-#                         e.g., {'H': 'A', 'I': 'B'} means fill H with A's data, I with B's data
-
-#     Returns:
-#     pd.DataFrame: DataFrame with missing zones filled in
-#     """
-
-#     # Define all expected zones
-#     all_zones = list(zone_names.keys())
-
-#     # Check which zones are present
-#     present_zones = sorted(df["ZONE"].unique())
-#     missing_zones = [zone for zone in all_zones if zone not in present_zones]
-
-#     # Create a copy of the original dataframe
-#     df_filled = df.copy()
-
-#     # Fill in missing zones
-#     for missing_zone in missing_zones:
-#         if missing_zone in zone_mapping:
-#             source_zone = zone_mapping[missing_zone]
-
-#             if source_zone not in present_zones:
-#                 continue
-
-#             # Get all data for the source zone
-#             source_data = df[df["ZONE"] == source_zone].copy()
-
-#             # Change the zone to the missing zone
-#             source_data["ZONE"] = missing_zone
-
-#             # Append to the filled dataframe
-#             df_filled = pd.concat([df_filled, source_data], ignore_index=True)
-#         else:
-#             print(f"No mapping provided for missing zone '{missing_zone}'")
-
-#     # Sort by month, hour, and zone for better organization
-#     df_filled = df_filled.sort_values(["ZONE"]).reset_index(drop=True)
-
-#     return df_filled
 
 
 #########################
@@ -306,7 +257,6 @@ def nearest_neighbor_lat_lon(
             closest_idx, dist = get_nearest(
                 src_points=left_point_radians,
                 candidates=right_points_radians,
-                metric="haversine",
                 leaf_size=leaf_size,
             )
 

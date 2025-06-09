@@ -16,9 +16,63 @@ from python.utils import (
     nrel_wtk_path,
     merge_to_zones,
     project_path,
-    fill_missing_zones,
+    zone_names,
     nearest_neighbor_lat_lon,
 )
+
+
+def fill_missing_zones(
+    df,
+    zone_mapping={
+        "H": "G",
+        "I": "G",
+    },
+):
+    """
+    Check for missing zones (A-K) and fill them with data from specified zones.
+
+    Parameters:
+    df (pd.DataFrame): DataFrame with columns 'ZONE'
+    zone_mapping (dict): Dictionary mapping missing zones to source zones
+                        e.g., {'H': 'A', 'I': 'B'} means fill H with A's data, I with B's data
+
+    Returns:
+    pd.DataFrame: DataFrame with missing zones filled in
+    """
+
+    # Define all expected zones
+    all_zones = list(zone_names.keys())
+
+    # Check which zones are present
+    present_zones = sorted(df["zone"].unique())
+    missing_zones = [zone for zone in all_zones if zone not in present_zones]
+
+    # Create a copy of the original dataframe
+    df_filled = df.copy()
+
+    # Fill in missing zones
+    for missing_zone in missing_zones:
+        if missing_zone in zone_mapping:
+            source_zone = zone_mapping[missing_zone]
+
+            if source_zone not in present_zones:
+                continue
+
+            # Get all data for the source zone
+            source_data = df[df["zone"] == source_zone].copy()
+
+            # Change the zone to the missing zone
+            source_data["zone"] = missing_zone
+
+            # Append to the filled dataframe
+            df_filled = pd.concat([df_filled, source_data], ignore_index=True)
+        else:
+            print(f"No mapping provided for missing zone '{missing_zone}'")
+
+    # Sort by month, hour, and zone for better organization
+    df_filled = df_filled.sort_values(["zone"]).reset_index(drop=True)
+
+    return df_filled
 
 
 def read_all_wtk(
@@ -208,7 +262,7 @@ def prepare_wind_data(
     use_salem=True,
     parallel=False,
     stab_coef_file=None,
-    coef_cols=["month", "hour", "ZONE"],
+    coef_cols=["month", "hour", "zone"],
     sites="wtk",
     wtk_keep_every=10,
     min_lat=39,  # approx NYS
@@ -415,7 +469,7 @@ def get_stability_coefficients(
     df,
     ws_climate_10m,
     ws_hubheight,
-    groupby_cols=["month", "hour", "ZONE"],
+    groupby_cols=["month", "hour", "zone"],
 ):
     """
     Calculates stability coefficients from climate data.
@@ -549,8 +603,9 @@ def calculate_wind_timeseries_from_genX(
     stab_coef_file,
     iec_curve,
     match_zones=True,
+    PV_bus_only=True,
     wind_vars=["U10", "V10"],
-    coef_cols=["month", "hour", "ZONE"],
+    coef_cols=["month", "hour", "zone"],
     lat_name="south_north",
     lon_name="west_east",
     curvilinear=True,
@@ -576,10 +631,12 @@ def calculate_wind_timeseries_from_genX(
         IEC wind turbine class to use ('iec1', 'iec2', 'iec3', or 'offshore')
     match_zones : bool, optional
         Whether to match zones when assigning to buses, by default True
+    PV_bus_only : bool, optional
+        Whether to only include PV buses, by default True
     wind_vars : list, optional
         Wind variables to extract from climate data, by default ["U10", "V10"]
     coef_cols : list, optional
-        Columns to use for stability coefficients, by default ["month", "hour", "ZONE"]
+        Columns to use for stability coefficients, by default ["month", "hour", "zone"]
     lat_name : str, optional
         Name of latitude variable in climate data, by default "south_north"
     lon_name : str, optional
@@ -602,7 +659,7 @@ def calculate_wind_timeseries_from_genX(
         climate_paths=climate_paths,
         wind_vars=wind_vars,
         sites=sites,
-        stab_coef_file=stab_coef_file,
+        stab_coef_file=None,
         coef_cols=coef_cols,
         lat_name=lat_name,
         lon_name=lon_name,
@@ -610,9 +667,32 @@ def calculate_wind_timeseries_from_genX(
         parallel=parallel,
     )
 
+    # Manually add stability coefficients since we know the zones
+    # Get stability coefficients
+    df_stab = pd.read_csv(stab_coef_file)
+    df_stab = fill_missing_zones(df_stab)
+
+    # Merge to get genX-defined zones
+    df_all = pd.merge(
+        df_wind,
+        df_genX[["latitude", "longitude", "genX_zone"]],
+        how="outer",
+        left_on=["desired_lat", "desired_lon"],
+        right_on=["latitude", "longitude"],
+    )
+
+    # Merge to get stability coefficients
+    df_all = pd.merge(
+        df_all.rename(columns={"genX_zone": "zone"}),
+        df_stab,
+        on=coef_cols,
+    )
+    # Compute hubheight wind speed
+    df_all["ws_hubheight"] = df_all["ws"] * (100 / 10) ** df_all["alpha"]
+
     # Merge with genX outputs
     df = pd.merge(
-        df_wind[["desired_lat", "desired_lon", "datetime", "ws_hubheight", "ZONE"]],
+        df_all[["desired_lat", "desired_lon", "datetime", "ws_hubheight", "zone"]],
         df_genX[["latitude", "longitude", "EndCap", "genX_zone"]],
         how="outer",
         left_on=["desired_lat", "desired_lon"],
@@ -630,9 +710,12 @@ def calculate_wind_timeseries_from_genX(
     )
 
     # Assign to buses
-    gdf_bus = gpd.read_file(f"{project_path}/data/grid/gis/Bus.shp")
+    gdf_bus = gpd.read_file(f"{project_path}/data/grid/gis/Bus_clean.shp")
+    if PV_bus_only:
+        gdf_bus = gdf_bus[gdf_bus["BUS_TYPE"] == 2].copy()
+
     gdf_genX_unique_locs = nearest_neighbor_lat_lon(
-        gdf_genX_unique_locs.rename(columns={"genX_zone": "ZONE"}),
+        gdf_genX_unique_locs.rename(columns={"genX_zone": "zone"}),
         gdf_bus,
         match_zones=match_zones,
     )
@@ -640,7 +723,7 @@ def calculate_wind_timeseries_from_genX(
     # Merge with timeseries and sum by bus
     df_out = (
         pd.merge(df, gdf_genX_unique_locs, on=["latitude", "longitude"], how="outer")
-        .groupby(["BUS_I", "datetime"])[["power_MW"]]
+        .groupby(["bus_id", "datetime"])[["power_MW"]]
         .sum()
     )
 
@@ -648,10 +731,42 @@ def calculate_wind_timeseries_from_genX(
     return df_out
 
 
+#################################
+# For existing wind, we need to generate either
+# offshore or onshore sites based on the current
+# genX-assigned zones
+#################################
+def generate_onshore_wind_sites(
+    df_genX,
+):
+    """
+    Generate onshore (land-based) wind sites by
+    creating random points in each target zone.
+    """
+    # Read NYISO GDF
+    nyiso_gdf = gpd.read_file(
+        f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp"
+    )
+
+    # For each zone, generate a random point in the zone
+    gdf = pd.merge(
+        nyiso_gdf,
+        df_genX,
+        left_on="zone",
+        right_on="genX_zone",
+    )
+    gdf["geometry"] = gdf.sample_points(1)
+
+    # Add lat/lon coords
+    gdf["latitude"] = gdf["geometry"].apply(lambda p: p.y)
+    gdf["longitude"] = gdf["geometry"].apply(lambda p: p.x)
+
+    # Return
+    return gdf
+
+
 def generate_offshore_wind_sites(
-    target_zone,
-    full_gdf,
-    n_points,
+    df_genX,
     buffer=1000,
     min_distance=10000,
     max_distance=40000,
@@ -664,43 +779,73 @@ def generate_offshore_wind_sites(
     1. Creating random points in target zone
     2. Displacing them southeast
     3. Ensuring they don't intersect with any original GDF geometries
+    Then, we assign the sites to the buses in the grid.
     """
+    # Read NYISO GDF
+    nyiso_gdf = gpd.read_file(
+        f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp"
+    )
+
     # Update CRS
-    full_gdf = full_gdf.copy().to_crs(crs)
-    target_zone_gdf = full_gdf[full_gdf["zone"] == target_zone].copy()
+    nyiso_gdf = nyiso_gdf.copy().to_crs(crs)
+    nyiso_gdf_union = nyiso_gdf.union_all()
 
-    zone_union = target_zone_gdf.union_all()
-    full_gdf_union = full_gdf.union_all()
-    bounds = zone_union.bounds
-    min_x, min_y, max_x, max_y = bounds
+    # For each zone, generate offshore sites assigned to the zone
+    gdf_out = []
+    for target_zone in df_genX["genX_zone"].unique():
+        zone_df = df_genX[df_genX["genX_zone"] == target_zone].copy().reset_index()
+        n_points = len(zone_df)
+        target_zone_gdf = nyiso_gdf[nyiso_gdf["zone"] == target_zone].copy()
 
-    valid_sites = []
-    attempts = 0
+        zone_union = target_zone_gdf.union_all()
+        bounds = zone_union.bounds
+        min_x, min_y, max_x, max_y = bounds
 
-    while len(valid_sites) < n_points and attempts < max_attempts:
-        # Generate point in zone
-        x = np.random.uniform(min_x, max_x)
-        y = np.random.uniform(min_y, max_y)
-        zone_point = Point(x, y)
+        valid_sites = []
+        attempts = 0
 
-        # Check if point is in target zone
-        if not zone_union.contains(zone_point):
+        while len(valid_sites) < n_points and attempts < max_attempts:
+            # Generate point in zone
+            x = np.random.uniform(min_x, max_x)
+            y = np.random.uniform(min_y, max_y)
+            zone_point = Point(x, y)
+
+            # Check if point is in target zone
+            if not zone_union.contains(zone_point):
+                attempts += 1
+                continue
+
+            # Displace southeast
+            distance = np.random.uniform(min_distance, max_distance)
+            bearing = np.random.uniform(bearing_range[0], bearing_range[1])
+            bearing_rad = math.radians(bearing)
+
+            new_x = zone_point.x + distance * math.sin(bearing_rad)
+            new_y = zone_point.y + distance * math.cos(bearing_rad)
+            offshore_point = Point(new_x, new_y)
+
+            # Validate offshore point doesn't intersect with any original geometry
+            if not nyiso_gdf_union.buffer(buffer).intersects(offshore_point):
+                valid_sites.append(offshore_point)
+
             attempts += 1
-            continue
 
-        # Displace southeast
-        distance = np.random.uniform(min_distance, max_distance)
-        bearing = np.random.uniform(bearing_range[0], bearing_range[1])
-        bearing_rad = math.radians(bearing)
+        # Convert to GeoDataFrame
+        gdf_valid_sites = gpd.GeoDataFrame(
+            geometry=valid_sites,
+            crs=crs,
+        )
 
-        new_x = zone_point.x + distance * math.sin(bearing_rad)
-        new_y = zone_point.y + distance * math.cos(bearing_rad)
-        offshore_point = Point(new_x, new_y)
+        # Add zone info
+        zone_df["geometry"] = gdf_valid_sites["geometry"]
 
-        # Validate offshore point doesn't intersect with any original geometry
-        if not full_gdf_union.buffer(buffer).intersects(offshore_point):
-            valid_sites.append(offshore_point)
+        # Append to output
+        gdf_out.append(zone_df)
 
-        attempts += 1
+    # Tidy
+    gdf_out = gpd.GeoDataFrame(pd.concat(gdf_out))
+    gdf_out = gdf_out.to_crs("EPSG:4326")
+    gdf_out["latitude"] = gdf_out["geometry"].apply(lambda p: p.y)
+    gdf_out["longitude"] = gdf_out["geometry"].apply(lambda p: p.x)
 
-    return gpd.GeoDataFrame(geometry=valid_sites)
+    return gdf_out

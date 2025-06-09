@@ -40,10 +40,10 @@ building_types_dict = {
 
 building_type_meta_map = {
     "mobile_home": "Mobile Home",
-    "single-family_detached": "Single Family Detached",
-    "single-family_attached": "Single Family Attached",
-    "multi-family_with_2_-_4_units": "Multi-Family 2-4 Units",
-    "multi-family_with_5plus_units": "Multi-Family 5+ Units",
+    "single-family_detached": "Single-Family Detached",
+    "single-family_attached": "Single-Family Attached",
+    "multi-family_with_2_-_4_units": "Multi-Family 2 - 4 Units",
+    "multi-family_with_5plus_units": "Multi-Family with 5+ Units",
     "outpatient": "Outpatient",
     "hospital": "Hospital",
     "largeoffice": "LargeOffice",

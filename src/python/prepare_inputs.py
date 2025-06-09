@@ -158,7 +158,7 @@ def retire_generators(
     zone: str,
     target_reduction: float,
     retirement_method: str = "random",
-    print_path: str = None,
+    store_path: str = None,
 ) -> pd.DataFrame:
     """
     Retire generators to reduce capacity in a zone
@@ -173,8 +173,8 @@ def retire_generators(
     if zone_ng_gens.empty:
         msg = f"Warning: No active NG generators found in zone {zone}"
         print(msg)
-        if print_path:
-            with open(f"{print_path}/NG_matching.txt", "a") as f:
+        if store_path:
+            with open(f"{store_path}/NG_matching.txt", "a") as f:
                 print(msg, file=f)
         return df_modified
 
@@ -242,8 +242,8 @@ def retire_generators(
         f"reducing capacity by {retired_capacity:.1f} MW (target: {target_reduction:.1f} MW)"
     )
     print(msg)
-    if print_path:
-        with open(f"{print_path}/NG_matching.txt", "a") as f:
+    if store_path:
+        with open(f"{store_path}/NG_matching.txt", "a") as f:
             print(msg, file=f)
 
     return df_modified
@@ -253,7 +253,7 @@ def duplicate_generators(
     df_genprop: pd.DataFrame,
     zone: str,
     target_increase: float,
-    print_path: str,
+    store_path: str,
 ) -> pd.DataFrame:
     """
     Duplicate generators to increase capacity in a zone
@@ -268,7 +268,7 @@ def duplicate_generators(
     if zone_ng_gens.empty:
         msg = f"Warning: No active NG generators found in zone {zone} for duplication"
         print(msg)
-        with open(f"{print_path}/NG_matching.txt", "a") as f:
+        with open(f"{store_path}/NG_matching.txt", "a") as f:
             print(msg, file=f)
         return df_modified
 
@@ -306,7 +306,7 @@ def duplicate_generators(
         f"increasing capacity by {added_capacity:.1f} MW (target: {target_increase:.1f} MW)"
     )
     print(msg)
-    with open(f"{print_path}/NG_matching.txt", "a") as f:
+    with open(f"{store_path}/NG_matching.txt", "a") as f:
         print(msg, file=f)
 
     return df_modified
@@ -316,14 +316,14 @@ def validate_results(
     df_original: pd.DataFrame,
     df_modified: pd.DataFrame,
     target_capacities: Dict[str, float],
-    print_path: str,
+    store_path: str,
 ) -> None:
     """
     Validate that the modifications achieved the target capacities
     """
     header = "\n" + "=" * 60 + "\nVALIDATION RESULTS\n" + "=" * 60
     print(header)
-    with open(f"{print_path}/NG_matching.txt", "a") as f:
+    with open(f"{store_path}/NG_matching.txt", "a") as f:
         print(header, file=f)
 
     # Get final capacities
@@ -333,7 +333,7 @@ def validate_results(
         "Zone | Original (MW) | Target (MW) | Final (MW) | Error (MW)\n" + "-" * 65
     )
     print(table_header)
-    with open(f"{print_path}/NG_matching.txt", "a") as f:
+    with open(f"{store_path}/NG_matching.txt", "a") as f:
         print(table_header, file=f)
 
     for zone in sorted(target_capacities.keys()):
@@ -344,21 +344,21 @@ def validate_results(
 
         row = f"{zone:4s} | {original_cap:12.1f} | {target_cap:10.1f} | {final_cap:9.1f} | {error:9.1f}"
         print(row)
-        with open(f"{print_path}/NG_matching.txt", "a") as f:
+        with open(f"{store_path}/NG_matching.txt", "a") as f:
             print(row, file=f)
 
 
 def match_ng_capacity(
     df_genx: pd.DataFrame,
     df_genprop: pd.DataFrame,
-    print_path: str,
+    store_path: str,
     retirement_method: str = "random",
     tolerance: float = 0.01,
 ) -> pd.DataFrame:
     """
     Main function to match natural gas capacity between GenX and genprop
     """
-    with open(f"{print_path}/NG_matching.txt", "a") as f:
+    with open(f"{store_path}/NG_matching.txt", "a") as f:
         print("Starting capacity matching process...", file=f)
     print("Starting capacity matching process...")
 
@@ -383,7 +383,7 @@ def match_ng_capacity(
         + "-" * 55
     )
     print(header)
-    with open(f"{print_path}/NG_matching.txt", "a") as f:
+    with open(f"{store_path}/NG_matching.txt", "a") as f:
         print(header, file=f)
 
     df_modified = df_genprop[df_genprop["FUEL_TYPE"] == "NG"].copy()
@@ -397,21 +397,26 @@ def match_ng_capacity(
             f"{zone:4s} | {current_cap:11.1f} | {target_cap:10.1f} | {difference:13.1f}"
         )
         print(row)
-        with open(f"{print_path}/NG_matching.txt", "a") as f:
+        with open(f"{store_path}/NG_matching.txt", "a") as f:
             print(row, file=f)
 
         # Only modify if difference is significant
         if abs(difference) > tolerance:
             if difference < 0:  # Need to retire capacity
                 df_modified = retire_generators(
-                    df_modified, zone, abs(difference), retirement_method, print_path
+                    df_modified, zone, abs(difference), retirement_method, store_path
                 )
             else:  # Need to add capacity
                 df_modified = duplicate_generators(
-                    df_modified, zone, difference, print_path
+                    df_modified, zone, difference, store_path
                 )
 
     # Validate results
-    validate_results(df_genprop, df_modified, target_capacities, print_path)
+    validate_results(df_genprop, df_modified, target_capacities, store_path)
+
+    # Store
+    df_modified[df_modified["GEN_STATUS"] == 1].to_csv(
+        f"{store_path}/inputs/genprop_NG_matched.csv", index=False
+    )
 
     return df_modified

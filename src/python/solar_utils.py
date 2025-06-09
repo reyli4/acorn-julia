@@ -681,11 +681,57 @@ def apply_solar_correction_factors(
     return df
 
 
+def generate_solar_sites(
+    df_genX,
+    sites_per_zone=1,
+):
+    """
+    Generate solar sites by creating random points in each target zone.
+    We need this for GenX existing solar since it's now downscaled
+    to specific lat/lons.
+    """
+    # Read NYISO GDF
+    nyiso_gdf = gpd.read_file(
+        f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp"
+    )
+
+    # Merge dataframes
+    gdf = pd.merge(
+        nyiso_gdf,
+        df_genX,
+        left_on="zone",
+        right_on="genX_zone",
+    )
+
+    # If only one point per zone, use original approach
+    if sites_per_zone == 1:
+        gdf["geometry"] = gdf.geometry.sample_points(1)
+        gdf["latitude"] = gdf["geometry"].apply(lambda p: p.y)
+        gdf["longitude"] = gdf["geometry"].apply(lambda p: p.x)
+        return gdf
+
+    # For multiple points, repeat rows and sample points
+    # Repeat each row sites_per_zone times
+    repeated_gdf = gdf.loc[gdf.index.repeat(sites_per_zone)].reset_index(drop=True)
+
+    # Sample one point per row since we've already duplicated the rows
+    repeated_gdf["geometry"] = repeated_gdf.geometry.sample_points(1)
+    repeated_gdf["latitude"] = repeated_gdf["geometry"].apply(lambda p: p.y)
+    repeated_gdf["longitude"] = repeated_gdf["geometry"].apply(lambda p: p.x)
+
+    # Split EndCap
+    if sites_per_zone > 1.0:
+        repeated_gdf["EndCap"] = repeated_gdf["EndCap"] / sites_per_zone
+
+    return repeated_gdf
+
+
 def calculate_solar_timeseries_from_genX(
     df_genX,
     climate_paths,
     correction_file,
     match_zones=True,
+    PV_bus_only=True,
     solar_vars=["T2C", "SWDOWN"],
     correction_cols=["month", "hour"],
     lat_name="south_north",
@@ -774,6 +820,9 @@ def calculate_solar_timeseries_from_genX(
 
     # Assign to buses
     gdf_bus = gpd.read_file(f"{project_path}/data/grid/gis/Bus_clean.shp")
+    if PV_bus_only:
+        gdf_bus = gdf_bus[gdf_bus["BUS_TYPE"] == 2].copy()
+
     gdf_genX_unique_locs = nearest_neighbor_lat_lon(
         gdf_genX_unique_locs.rename(columns={"genX_zone": "zone"}),
         gdf_bus,
