@@ -1,5 +1,8 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Point
+from python.utils import project_path, merge_to_zones, nearest_neighbor_lat_lon
 
 
 def disaggregate_weekly_to_hourly(
@@ -99,6 +102,7 @@ def disaggregate_weekly_to_hourly(
             .resample("h")[["p_avg"]]
             .ffill()
             .reset_index()
+            .rename(columns={"p_avg": "power_MW"})
         )
 
     else:  # diurnal method
@@ -142,7 +146,7 @@ def disaggregate_weekly_to_hourly(
                         {
                             "datetime": timestamp,
                             "eia_id": row["eia_id"],
-                            "power_mw": power_mw,
+                            "power_MW": power_mw,
                             # "period_start": period_start,
                             # "hour_of_period": i,
                             # "hour_of_day": timestamp.hour,
@@ -166,3 +170,81 @@ def disaggregate_weekly_to_hourly(
     final_df = final_df.set_index(["eia_id", "datetime"])
 
     return final_df
+
+
+def assign_hydro_GD_to_buses(
+    hydro_scenario,
+    downsample_method="average",
+):
+    """
+    Assign hydro GDs to buses.
+    """
+    # Read hydro production and plants
+    df_hydro = pd.read_csv(
+        f"{project_path}/data/hydro/godeeep-hydro/godeeep-hydro-{hydro_scenario}-weekly.csv"
+    )
+    df_hydro_plants = pd.read_csv(
+        f"{project_path}/data/hydro/godeeep-hydro/godeeep-hydro-plants.csv"
+    )
+    # Merge plant info to zones
+    df_hydro_plants = merge_to_zones(df_hydro_plants, join="left")
+
+    # Subset to NYISO plants
+    df_hydro_plants = df_hydro_plants[df_hydro_plants["ba"] == "NYIS"]
+    df_hydro = df_hydro[df_hydro["eia_id"].isin(df_hydro_plants["eia_id"])].copy()
+    df_hydro["datetime"] = pd.to_datetime(df_hydro["datetime"])
+    df_hydro_plants["geometry"] = [
+        Point(x, y) for x, y in zip(df_hydro_plants["lon"], df_hydro_plants["lat"])
+    ]
+
+    # We model Robert-Moses Niagara and St Lawrence FDR separately
+    large_hydro_plants = ["Robert Moses Niagara", "Robert Moses - St. Lawrence"]
+    df_large_hydro = df_hydro[df_hydro["plant"].isin(large_hydro_plants)].copy()
+    # Assign buses manually
+    df_large_hydro.loc[df_large_hydro["plant"] == "Robert Moses Niagara", "bus_id"] = 55
+    df_large_hydro.loc[
+        df_large_hydro["plant"] == "Robert Moses - St. Lawrence", "bus_id"
+    ] = 48
+
+    # For the rest, we use the average pattern
+    df_small_hydro = disaggregate_weekly_to_hourly(
+        df=df_hydro[~df_hydro["plant"].isin(large_hydro_plants)].copy(),
+        method=downsample_method,
+    )
+
+    # There are some without zonal overlap -- assign manually
+    df_hydro_plants.loc[df_hydro_plants["zone"].isna(), "zone"] = (
+        "C"  # C for first two based on coordinates
+    )
+
+    # Merge to assign to buses
+    df_small_hydro = pd.merge(
+        df_small_hydro.reset_index(),
+        df_hydro_plants[["eia_id", "zone", "lat", "lon", "geometry"]],
+        on="eia_id",
+        how="left",
+    )
+
+    # Get unique locations for quicker assignment
+    df_small_hydro_unique_locs = df_small_hydro.drop_duplicates("eia_id")
+    df_small_hydro_unique_locs = nearest_neighbor_lat_lon(
+        gpd.GeoDataFrame(df_small_hydro_unique_locs), match_zones=True
+    )
+
+    df_small_hydro = (
+        pd.merge(
+            df_small_hydro,
+            df_small_hydro_unique_locs[["eia_id", "bus_id"]],
+            on="eia_id",
+            how="outer",
+        )
+        .groupby(["bus_id", "datetime"])[["power_MW"]]
+        .sum()
+    )
+
+    # Tidy large hydro
+    df_large_hydro = df_large_hydro.reset_index().set_index(["bus_id", "datetime"])[
+        ["power_predicted_mwh"]
+    ]
+
+    return df_small_hydro, df_large_hydro

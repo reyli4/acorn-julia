@@ -710,14 +710,10 @@ def calculate_wind_timeseries_from_genX(
     )
 
     # Assign to buses
-    gdf_bus = gpd.read_file(f"{project_path}/data/grid/gis/Bus_clean.shp")
-    if PV_bus_only:
-        gdf_bus = gdf_bus[gdf_bus["BUS_TYPE"] == 2].copy()
-
     gdf_genX_unique_locs = nearest_neighbor_lat_lon(
         gdf_genX_unique_locs.rename(columns={"genX_zone": "zone"}),
-        gdf_bus,
         match_zones=match_zones,
+        PV_bus_only=PV_bus_only,
     )
 
     # Merge with timeseries and sum by bus

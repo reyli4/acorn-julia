@@ -69,6 +69,7 @@ def merge_to_zones(
     nyiso_zone_shp_path: str = f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp",
     lat_name: str = "lat",
     lon_name: str = "lon",
+    join: str = "inner",
 ):
     """
     Merge a dataframe with lat/lon coordinates to the NYISO zones.
@@ -84,7 +85,7 @@ def merge_to_zones(
     )
 
     # Merge
-    df_gdf = gpd.sjoin(df_gdf, nyiso_gdf, how="inner", predicate="within")
+    df_gdf = gpd.sjoin(df_gdf, nyiso_gdf, how=join, predicate="within")
 
     # Return
     return df_gdf.drop(columns=["index_right"])
@@ -189,10 +190,10 @@ def get_nearest(
 
 def nearest_neighbor_lat_lon(
     origin_gdf: gpd.GeoDataFrame,
-    candidate_gdf: gpd.GeoDataFrame,
     match_zones: bool = True,
     return_dist: bool = False,
     leaf_size: int = 20,
+    PV_bus_only: bool = True,
 ):
     """
     For each point in origin_gdf, find closest point in right GeoDataFrame and return them.
@@ -204,22 +205,26 @@ def nearest_neighbor_lat_lon(
     ----------
     origin_gdf : gpd.GeoDataFrame
         A GeoDataFrame containing the origin points.
-    candidate_gdf : gpd.GeoDataFrame
-        A GeoDataFrame containing the candidate destination points.
     return_dist : bool
         If True, the distance between the nearest neighbors is returned.
     leaf_size : int
         Leaf size passed to BallTree. Default is 20.
     match_zones : bool
         If True, only points with matching zone values will be considered.
+        Assumes 'zone' column exists in both origin_gdf and candidate_gdf.
 
     Returns
     -------
     closest_points: Union[Dict, Tuple]
         A dictionary or tuple containing the closest points and distances (if requested).
     """
+    # Read byus GDF as candidate_gdf
+    bus_gdf = gpd.read_file(f"{project_path}/data/grid/gis/Bus_clean.shp")
+    if PV_bus_only:
+        bus_gdf = bus_gdf[bus_gdf["BUS_TYPE"] == 2].copy()
+
     left_geom_col = origin_gdf.geometry.name
-    right_geom_col = candidate_gdf.geometry.name
+    right_geom_col = bus_gdf.geometry.name
 
     # Initialize the results container
     result_rows = []
@@ -232,9 +237,7 @@ def nearest_neighbor_lat_lon(
 
             # Filter right_gdf to only include points with matching zone
             matching_right = (
-                candidate_gdf[candidate_gdf["zone"] == left_zone]
-                .copy()
-                .reset_index(drop=True)
+                bus_gdf[bus_gdf["zone"] == left_zone].copy().reset_index(drop=True)
             )
 
             # Skip if no matching zones found
@@ -270,7 +273,7 @@ def nearest_neighbor_lat_lon(
     # If no zone filtering, use the original efficient implementation
     else:
         # Ensure that index in right gdf is formed of sequential numbers
-        right = candidate_gdf.copy().reset_index(drop=True)
+        right = bus_gdf.copy().reset_index(drop=True)
 
         # Parse coordinates from points and insert them into a numpy array as RADIANS
         left_radians = np.array(

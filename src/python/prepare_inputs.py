@@ -1,6 +1,9 @@
 import pandas as pd
 import random
 from typing import Dict
+import geopandas as gpd
+
+from python.utils import project_path
 
 
 def resource_mapping(resource):
@@ -8,7 +11,9 @@ def resource_mapping(resource):
         return "battery"
     elif "biomass" in resource:
         return "biomass"
-    elif "hydroelectric" in resource:
+    elif "hydroelectric" in resource and "storage" in resource:
+        return "hydroelectric_storage"
+    elif "hydroelectric" in resource and "storage" not in resource:
         return "hydroelectric"
     elif "distributed_generation" in resource:
         return "distributed_generation"
@@ -48,6 +53,53 @@ def tidy_genX(df_genX: pd.DataFrame) -> pd.DataFrame:
     df_genX["Resource"] = df_genX["Resource"].apply(lambda x: resource_mapping(x))
 
     return df_genX
+
+
+def generate_random_sites(
+    df_genX,
+    sites_per_zone=1,
+    columns_to_scale=["EndCap"],
+):
+    """
+    Generate random sites by creating random points in each target zone.
+    We need this for GenX existing resources since it's now downscaled
+    to specific lat/lons.
+    """
+    # Read NYISO GDF
+    nyiso_gdf = gpd.read_file(
+        f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp"
+    )
+
+    # Merge dataframes
+    gdf = pd.merge(
+        nyiso_gdf,
+        df_genX,
+        left_on="zone",
+        right_on="genX_zone",
+    )
+
+    # If only one point per zone, use original approach
+    if sites_per_zone == 1:
+        gdf["geometry"] = gdf.geometry.sample_points(1)
+        gdf["latitude"] = gdf["geometry"].apply(lambda p: p.y)
+        gdf["longitude"] = gdf["geometry"].apply(lambda p: p.x)
+        return gdf
+
+    # For multiple points, repeat rows and sample points
+    # Repeat each row sites_per_zone times
+    repeated_gdf = gdf.loc[gdf.index.repeat(sites_per_zone)].reset_index(drop=True)
+
+    # Sample one point per row since we've already duplicated the rows
+    repeated_gdf["geometry"] = repeated_gdf.geometry.sample_points(1)
+    repeated_gdf["latitude"] = repeated_gdf["geometry"].apply(lambda p: p.y)
+    repeated_gdf["longitude"] = repeated_gdf["geometry"].apply(lambda p: p.x)
+
+    # Split EndCap
+    if sites_per_zone > 1.0:
+        for col in columns_to_scale:
+            repeated_gdf[col] = repeated_gdf[col] / sites_per_zone
+
+    return repeated_gdf
 
 
 def split_combined_zones(
