@@ -1,103 +1,168 @@
-using JuMP
-using Gurobi
 using CSV
 using DataFrames
-using MAT
-using LinearAlgebra
-using MathOptInterface
 using Dates
+using JuMP
+using Gurobi
 
-include("./acorn_utils.jl")
+include("./utils.jl")
 
-##############################
-# Set data directories
-##############################
-data_dir = joinpath(dirname(@__DIR__), "data")
-tmp_data_dir = joinpath(dirname(@__DIR__), "data_tmp")
 
-##############################
-# MAIN
-##############################
-function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_name, out_path)
-    # Define constants
-    batt_duration = 8
-    storage_eff = 0.85 # Efficiency for general storage
-    gilboa_eff = 0.75 # Efficiency for specific storage (e.g., Gilboa)
-    # Get number of hours in the year
-    # nt = Dates.daysinyear(year) * 24
-    nt = 365 * 24
+function run_model(
+    run_name,
+    climate_scenario,
+    sim_year,
+    branchprop_name,
+    busprop_name,
+    if_lim_name,
+    save_name,
+    exclude_external_zones=true,
+    include_new_hvdc=false,
+    storage_eff=0.75,
+    data_directory="/home/fs01/dcl257/projects/acorn-julia/data")
 
-    n_if_lims = 15
+    ############################
+    # Read all data
+    ############################
+    run_directory = "/home/fs01/dcl257/projects/acorn-julia/runs/$(run_name)"
+    out_path = "$(run_directory)/outputs/$(climate_scenario)/$(save_name)"
+    
+    if !isdir(out_path)
+        mkpath(out_path)
+    end
 
-    # Set flags
-    newHVDC = true
-    HydroCon = true
-    tranRating = true
-    networkcon = true
+    # Read the load
+    load = CSV.read("$(run_directory)/inputs/load_$(climate_scenario).csv", DataFrame)
 
-    # Read grid data
-    gen_prop = CSV.read("$(data_dir)/grid/gen_prop_$(gen_prop_name).csv", DataFrame, header=true, stringtype=String)
-    bus_prop = CSV.read("$(data_dir)/grid/bus_prop_$(bus_prop_name).csv", DataFrame, header=true, stringtype=String)
-    branch_prop = CSV.read("$(data_dir)/grid/branch_prop_$(branch_prop_name).csv", DataFrame, header=true, stringtype=String)
+    # Read generation
+    solar_upv = CSV.read("$(run_directory)/inputs/solar_upv_$(climate_scenario).csv", DataFrame)
+    wind = CSV.read("$(run_directory)/inputs/wind_$(climate_scenario).csv", DataFrame)
+    solar_dpv = CSV.read("$(run_directory)/inputs/solar_dpv_$(climate_scenario).csv", DataFrame)
 
-    bus_ids = bus_prop[:, 1]
-
-    # Get scaling factors
-    cc_scenario, bd_rate, ev_rate, wind_scalar, solar_scalar, batt_scalar = read_scaling_factors(scenario)
-
-    ############## Load ####################
-    load = get_load(cc_scenario, year, ev_rate, bd_rate, bus_ids, nt)
-    load = subtract_small_hydro(load, bus_ids, nt)
-    load = subtract_solar_dpv(load, bus_ids, cc_scenario, year, solar_scalar, nt)
-
-    ############## Supply ##############
     # Read hydro
-    niagra_hydro, moses_saund_hydro = get_hydro(cc_scenario, year)
+    hydro_scenario = split(climate_scenario, "_")[1]
+    large_hydro = CSV.read("$(run_directory)/inputs/large_hydro_$(hydro_scenario).csv", DataFrame)
+    small_hydro = CSV.read("$(run_directory)/inputs/small_hydro_$(hydro_scenario).csv", DataFrame)
 
-    # Add wind generators to the model
-    wind_gen, wind_bus_ids = get_wind(year, wind_scalar, nt)
-    gen_prop = add_wind_generators(gen_prop, wind_bus_ids)
+    # Read storage
+    storage = CSV.read("$(run_directory)/inputs/storage_assignment.csv", DataFrame)
 
-    # Add utility solar generators
-    solar_upv_gen, solar_upv_bus_ids = get_solar_upv(cc_scenario, year, solar_scalar, nt)
-    gen_prop = add_upv_generators(gen_prop, solar_upv_bus_ids)
+    # Read generators
+    genprop_nuclear = CSV.read("$(run_directory)/inputs/genprop_nuclear_matched.csv", DataFrame, stringtype=String)
+    genprop_ng = CSV.read("$(run_directory)/inputs/genprop_ng_matched.csv", DataFrame, stringtype=String)
+    genprop_hydro = CSV.read("$(run_directory)/inputs/genprop_hydro.csv", DataFrame, stringtype=String)
+    genprop = vcat(genprop_nuclear, genprop_ng, genprop_hydro)
 
-    # HVDC generators
-    gen_prop = add_hvdc(gen_prop)
+    # Read bus data
+    busprop = CSV.read("$(data_directory)/grid/bus_prop_$(busprop_name).csv", DataFrame)
+    bus_ids = busprop[:, "BUS_I"]
+
+    # Read branch data
+    branchprop = CSV.read("$(data_directory)/grid/branch_prop_$(branchprop_name).csv", DataFrame)
+
+    ##### Remove external zones if specified
+    if exclude_external_zones
+        external_buses = [21, 29, 35, 100, 102, 103, 124, 125, 132, 134, 138]
+
+        # Buses
+        busprop = busprop[findall(.!in(external_buses), busprop.BUS_I), :]
+        bus_ids = busprop[:, "BUS_I"]
+
+        # Branches
+        branchprop = branchprop[findall(.!in(external_buses), branchprop.F_BUS), :]
+        branchprop = branchprop[findall(.!in(external_buses), branchprop.T_BUS), :]
+    end
+
+    #############################
+    # Load adjustments 
+    #############################
+    # Subtract small solar 
+    load = subtract_solar_dpv(load, solar_dpv, sim_year)
+
+    # Subtract small hydro
+    load = subtract_small_hydro(load, small_hydro, sim_year)
+
+    if !exclude_external_zones
+        # Fill the missing load buses with zero (external ones)
+        println("NOTE: External buses all have zero load")
+        load = leftjoin(DataFrame(bus_id=bus_ids), load, on=:bus_id)
+        load = coalesce.(load, 0.0)
+        load = sort(load, [:bus_id])
+        load = max.(load, 0)
+    end
+
+    # Get final load data
+    sim_dates = names(load)[2:end]
+    nt = length(sim_dates)
+    load_data = Matrix(load[:, sim_dates])
+
+    #############################
+    # Add generators
+    #############################
+    # Add solar and wind generators
+    wind_bus_ids = wind[:, "bus_id"]
+    genprop = add_wind_generators(genprop, wind_bus_ids)
+
+    solar_upv_bus_ids = solar_upv[:, "bus_id"]
+    genprop = add_solar_generators(genprop, solar_upv_bus_ids)
+
+    if !exclude_external_zones
+        if include_new_hvdc
+            genprop = add_hvdc_generators(genprop, false)
+        end
+    end
 
     # Get generator limits
-    g_max = repeat(gen_prop[:, "PMAX"], 1, nt) # Maximum real power output (MW)
-    g_min = repeat(gen_prop[:, "PMIN"], 1, nt) # Minimum real power output (MW)
+    g_max = repeat(genprop[:, "PMAX"], 1, nt) # Maximum real power output (MW)
+    g_min = repeat(genprop[:, "PMIN"], 1, nt) # Minimum real power output (MW)
 
     # Update for renewables
-    wind_idx = findall(x -> x == "Wind", gen_prop[:, "UNIT_TYPE"])
-    g_max[wind_idx, :] = wind_gen[:, 1:nt]
+    wind_idx = findall(x -> x == "Wind", genprop[:, "UNIT_TYPE"])
+    g_max[wind_idx, :] .= wind[:, sim_dates]
 
-    solar_upv_idx = findall(x -> x == "SolarUPV", gen_prop[:, "UNIT_TYPE"])
-    g_max[solar_upv_idx, :] = solar_upv_gen[:, 1:nt]
+    solar_upv_idx = findall(x -> x == "SolarUPV", genprop[:, "UNIT_TYPE"])
+    g_max[solar_upv_idx, :] .= solar_upv[:, sim_dates]
 
     # Get generator ramp rates
-    ramp_down = max.(repeat(gen_prop[:, "RAMP_30"], 1, nt) .* 2, repeat(gen_prop[:, "PMAX"], 1, nt)) # max of RAMP_30, PMAX??
+    ramp_down = max.(repeat(genprop[:, "RAMP_30"], 1, nt) .* 2, repeat(genprop[:, "PMAX"], 1, nt)) # max of 2*RAMP_30, PMAX
     ramp_up = copy(ramp_down)
 
-    # Note in the original model there is cost info: skipping for now
-    # since it's not used in the 2040 analysis
+    # Generator cost
+    gencost = repeat(genprop[:, "COST_1"], 1, nt) # Cost per unit power generated
 
-    ############## Grid ##############
-    # Transmission interface limits
-    if_lim_up, if_lim_dn, if_lim_map = get_if_lims(year, n_if_lims, nt)
+    # Get storage info
+    storage_bus_ids = storage[:, "bus_id"]
+    storage_charge_cap = repeat(storage[:, "charge_capacity_MW"], 1, nt)
+    storage_energy_cap = repeat(storage[:, "storage_capacity_mwh"], 1, nt + 1)
+
+    #########################
+    # Interface limits
+    #########################
+    # Read interface limits
+    if_lims = CSV.read("$(data_directory)/nyiso/interface_limits/if_lim_$(if_lim_name).csv", DataFrame)
+
+    # Remove eternal zones if specified
+    if exclude_external_zones
+        external_zones = ["NE", "IESO", "PJM"]
+        if_lims = if_lims[findall(.!in(external_zones), if_lims.FROM_ZONE), :]
+        if_lims = if_lims[findall(.!in(external_zones), if_lims.TO_ZONE), :]
+    end
+
+    if_lim_up = repeat(if_lims[:, "IF_MAX"], 1, nt)
+    if_lim_down = repeat(if_lims[:, "IF_MIN"], 1, nt)
+
+    # Get IF lim map and update branchprop
+    if_lim_map, branchprop = create_interface_map(if_lims, branchprop)
 
     # Branch limits
-    branch_lims = repeat(Float64.(branch_prop[:, "RATE_A"]), 1, nt)
+    branch_lims = repeat(Float64.(branchprop[:, "RATE_A"]), 1, nt)
     branch_lims[branch_lims.==0] .= 99999.0
 
-    # Storage
-    charge_cap, storage_cap, storage_bus_ids = get_storage(batt_scalar, batt_duration, nt)
-
-    ########## Optimization ##############
-    n_gen = size(gen_prop, 1)
-    n_bus = size(bus_prop, 1)
-    n_branch = size(branch_prop, 1)
+    ########################
+    # Optimization 
+    ########################
+    n_gen = size(genprop, 1)
+    n_bus = size(busprop, 1)
+    n_branch = size(branchprop, 1)
 
     model = Model(Gurobi.Optimizer)
 
@@ -113,187 +178,229 @@ function run_model(scenario, year, gen_prop_name, branch_prop_name, bus_prop_nam
     ## Constraints 
     # Branch flow limits and power flow equations
     for l in 1:n_branch
-        idx_from_bus = findfirst(x -> x == branch_prop[l, "F_BUS"], bus_prop[:, "BUS_I"])
-        idx_to_bus = findfirst(x -> x == branch_prop[l, "T_BUS"], bus_prop[:, "BUS_I"])
-        @constraint(model, -branch_lims[l, :] .<= flow[l, :] .<= branch_lims[l, :])  # Branch flow limits
-        @constraint(model, flow[l, :] .== (100 / branch_prop[l, "BR_X"]) .*  # DC power flow equations
-                                          (bus_angle[idx_from_bus, :] .-
-                                           bus_angle[idx_to_bus, :]))
+        idx_from_bus = findfirst(x -> x == branchprop[l, "F_BUS"], busprop[:, "BUS_I"])
+        idx_to_bus = findfirst(x -> x == branchprop[l, "T_BUS"], busprop[:, "BUS_I"])
+        # Branch flow limits
+        @constraint(model, -branch_lims[l, :] .<= flow[l, :] .<= branch_lims[l, :])
+        # DC power flow equations
+        @constraint(model, flow[l, :] .== (100 / branchprop[l, "BR_X"]) .*
+                                          (bus_angle[idx_from_bus, :] .- bus_angle[idx_to_bus, :]))
     end
 
     # Node balance and phase angle constraints
     for idx in 1:n_bus
         bus_id = bus_ids[idx]
-        if bus_prop[idx, "BUS_TYPE"] != 3  # Not the slack bus
+        if busprop[idx, "BUS_TYPE"] != 3  # Not the slack bus
             if bus_id in storage_bus_ids
                 # Node balance with storage devices
                 storage_idx = findfirst(==(bus_id), storage_bus_ids)
-                @constraint(model, load[idx, 1:nt] .==
-                                   -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "F_BUS"])) .+
-                                   sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "T_BUS"])) .+
-                                   sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, gen_prop[:, "GEN_BUS"])) .+
+                @constraint(model, load_data[idx, 1:nt] .==
+                                   -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branchprop[:, "F_BUS"])) .+
+                                   sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branchprop[:, "T_BUS"])) .+
+                                   sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, genprop[:, "GEN_BUS"])) .+
                                    discharge[storage_idx, 1:nt] .-
                                    charge[storage_idx, 1:nt] .+
                                    load_shedding[idx, 1:nt])
             else
                 # Node balance without storage devices
-                @constraint(model, load[idx, 1:nt] .==
-                                   -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "F_BUS"])) .+
-                                   sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "T_BUS"])) .+
-                                   sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, gen_prop[:, "GEN_BUS"])) .+
+                @constraint(model, load_data[idx, 1:nt] .==
+                                   -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branchprop[:, "F_BUS"])) .+
+                                   sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branchprop[:, "T_BUS"])) .+
+                                   sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, genprop[:, "GEN_BUS"])) .+
                                    load_shedding[idx, 1:nt])
             end
             @constraint(model, -2 * pi .<= bus_angle[idx, 1:nt] .<= 2 * pi)  # Voltage angle limits
         else  # Slack bus
             # Node balance for slack bus
-            @constraint(model, load[idx, 1:nt] .==
-                               -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "F_BUS"])) .+
-                               sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branch_prop[:, "T_BUS"])) .+
-                               sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, gen_prop[:, "GEN_BUS"])) .+
+            @constraint(model, load_data[idx, 1:nt] .==
+                               -sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branchprop[:, "F_BUS"])) .+
+                               sum(flow[l, 1:nt] for l in findall(x -> x == bus_id, branchprop[:, "T_BUS"])) .+
+                               sum(pg[l, 1:nt] for l in findall(x -> x == bus_id, genprop[:, "GEN_BUS"])) .+
                                load_shedding[idx, 1:nt])
             @constraint(model, bus_angle[idx, 1:nt] .== 0.2979 / 180 * pi)  # Fix voltage angle at slack bus
         end
     end
 
     # Storage constraints
-    @constraint(model, 0 .<= charge .<= charge_cap)         # Charging limits
-    @constraint(model, 0 .<= discharge .<= charge_cap)      # Discharging limits
+    @constraint(model, 0 .<= charge .<= storage_charge_cap)         # Charging limits
+    @constraint(model, 0 .<= discharge .<= storage_charge_cap)      # Discharging limits
 
     # Battery state dynamics for all time steps
     for t in 1:nt
         # Battery state dynamics for all but the last storage bus
-        @constraint(model, batt_state[1:end-1, t+1] .== batt_state[1:end-1, t] .+ sqrt(storage_eff) .* charge[1:end-1, t] .- (1 / sqrt(storage_eff)) .* discharge[1:end-1, t])
+        @constraint(model, batt_state[1:end, t+1] .== batt_state[1:end, t] .+ sqrt(storage_eff) .* charge[1:end, t] .- (1 / sqrt(storage_eff)) .* discharge[1:end, t])
 
-        # Battery state dynamics Gilboa
-        @constraint(model, batt_state[end, t+1] .== batt_state[end, t] .+ sqrt(gilboa_eff) .* charge[end, t] .- (1 / sqrt(gilboa_eff)) .* discharge[end, t])
+        # NEED TO UPDATE THIS!
+        # # Battery state dynamics Gilboa
+        # @constraint(model, batt_state[end, t+1] .== batt_state[end, t] .+ sqrt(gilboa_eff) .* charge[end, t] .- (1 / sqrt(gilboa_eff)) .* discharge[end, t])
     end
 
     # Battery capacity constraints
-    @constraint(model, 0.0 .* storage_cap .<= batt_state .<= storage_cap)
+    @constraint(model, 0.0 .* storage_energy_cap .<= batt_state .<= storage_energy_cap)
 
     # Initial battery state (assuming 30% of capacity)
-    @constraint(model, batt_state[:, 1] .== 0.3 .* storage_cap[:, 1])
-
-    # Interface flow constraints
-    # Internal limits set to infinity if desired
-    if !networkcon
-        if_lim_dn[1:12, :] .= -Inf
-        if_lim_up[1:12, :] .= Inf
-    end
+    @constraint(model, batt_state[:, 1] .== 0.3 .* storage_energy_cap[:, 1])
 
     # Impose interface limits
+    n_if_lims = size(if_lim_up)[1]
+
     for i in 1:n_if_lims
         # Sum flow across the interfaces
-        idx = if_lim_map[findall(==(i), if_lim_map[:, "IF_ID"]), "BUS_ID"]
-        idx_signs = sign.(idx)
-        idx_abs = abs.(idx)
+        branch_idx = if_lim_map[findall(==(i), if_lim_map[:, "IF_ID"]), "BR_IDX"]
+        idx_signs = sign.(branch_idx)
+        idx_abs = abs.(branch_idx)
+
         flow_sum = [sum(idx_signs .* flow[Int.(idx_abs), t]) for t in 1:nt]
         # Constraint
-        @constraint(model, if_lim_dn[i, 1:nt] .<= flow_sum .<= if_lim_up[i, 1:nt])
+        @constraint(model, if_lim_down[i, 1:nt] .<= flow_sum .<= if_lim_up[i, 1:nt])
     end
 
     # Nuclear generators always fully dispatch
-    nuclear_idx = findall(x -> x == "Nuclear", gen_prop[!, "UNIT_TYPE"])
+    nuclear_idx = findall(x -> x == "Nuclear", genprop[!, "UNIT_TYPE"])
     for idx in nuclear_idx
         @constraint(model, pg[idx, :] .== g_max[idx, :])
     end
 
-    # Hydro generators always fully dispatch
-    niagra_idx = findfirst(x -> x == "Niagra", gen_prop[!, "UNIT_TYPE"])
-    moses_saund_idx = findfirst(x -> x == "MosesSaunders", gen_prop[!, "UNIT_TYPE"])
-    if HydroCon
-        # Load the 'qm_to_numdays.csv' file into a DataFrame
-        dayofqm = CSV.read("$(tmp_data_dir)/qm_to_numdays.csv", DataFrame)
-        nhours = dayofqm.Days .* 24  # Convert days to hours
+    # Hydro generators always fully dispatch at a weekly timescale
+    niagara_idx = findfirst(x -> x == "Moses Niagara (Fleet)", genprop[!, "GEN_NAME"])
+    moses_saund_idx = findfirst(x -> x == "St Lawrence - FDR (Fleet)", genprop[!, "GEN_NAME"])
 
-        # Calculate the capacity rate of Moses Saunders
-        hydro_pmax = gen_prop[moses_saund_idx, "PMAX"]
-        cap_rate = maximum(moses_saund_hydro ./ nhours / hydro_pmax)
-        if cap_rate > 1
-            g_max[moses_saund_idx, :] .= g_max[moses_saund_idx, :] .* cap_rate
-        end
+    moses_saund_hydro = Matrix(filter_by_year(large_hydro, sim_year))[1, 2:end]
+    niagara_hydro = Matrix(filter_by_year(large_hydro, sim_year))[2, 2:end]
 
-        # Cumulative time counter
-        ct = 0
-        for t in 1:48
-            # Add constraints for generator power sum based on nyhy and moses_saund_hydro
-            @constraint(model, sum(pg[niagra_idx, ct+1:ct+nhours[t]]) == niagra_hydro[t])
-            @constraint(model, sum(pg[moses_saund_idx, ct+1:ct+nhours[t]]) == moses_saund_hydro[t])
-            ct += nhours[t]
-        end
+    # Calculate the capacity rate of Moses Saunders
+    hydro_pmax = genprop[moses_saund_idx, "PMAX"]
+    hours_in_week = 24 * 7
+    cap_rate = maximum(moses_saund_hydro ./ hours_in_week / hydro_pmax)
+    if cap_rate > 1
+        g_max[moses_saund_idx, :] .= g_max[moses_saund_idx, :] .* cap_rate
     end
 
+    # Calculate the capacity rate of Niagara
+    hydro_pmax = genprop[niagara_idx, "PMAX"]
+    hours_in_week = 24 * 7
+    cap_rate = maximum(niagara_hydro ./ hours_in_week / hydro_pmax)
+    if cap_rate > 1
+        g_max[niagara_idx, :] .= g_max[niagara_idx, :] .* cap_rate
+    end
+
+    # Do manually for now, update later
+    last_hydro_day = split(names(filter_by_year(large_hydro, sim_year))[end], "-")[end]
+    if last_hydro_day == "30"
+        weekly_hours = vcat(fill(7 * 24, 52), [14])
+    elseif last_hydro_day == "31"
+        weekly_hours = vcat(fill(7 * 24, 52), [7])
+    else
+        throw(DomainError(last_hydro_error, "Error with hydro"))
+    end
+
+    # Cumulative time counter
+    ct = 0
+    for t in 1:48
+        # Add constraints for generator power sum
+        @constraint(model, sum(pg[niagara_idx, ct+1:ct+weekly_hours[t]]) == niagara_hydro[t])
+        @constraint(model, sum(pg[moses_saund_idx, ct+1:ct+weekly_hours[t]]) == moses_saund_hydro[t])
+        ct += weekly_hours[t]
+    end
     # Generator capacity constraints
     @constraint(model, g_min .<= pg .<= g_max)
 
-    # HVDC constraints (modelled as two dummy generators on each side of the lines)
-    csc_idx = findall(x -> x == "HVDC_CSC", gen_prop[!, "UNIT_TYPE"])
-    @constraint(model, pg[csc_idx[1], :] .== -pg[csc_idx[2], :]) # SC+NPX1385
+    if !exclude_external_zones
+        # HVDC constraints (modelled as two dummy generators on each side of the lines)
+        csc_idx = findall(x -> x == "HVDC_CSC", genprop[!, "GEN_NAME"])
+        @constraint(model, pg[csc_idx[1], :] .== -pg[csc_idx[2], :]) # SC+NPX1385
 
-    neptune_idx = findall(x -> x == "HVDC_Neptune", gen_prop[!, "UNIT_TYPE"])
-    @constraint(model, pg[neptune_idx[1], :] .== -pg[neptune_idx[2], :]) # Neptune
+        neptune_idx = findall(x -> x == "HVDC_Neptune", genprop[!, "GEN_NAME"])
+        @constraint(model, pg[neptune_idx[1], :] .== -pg[neptune_idx[2], :]) # Neptune
 
-    vft_idx = findall(x -> x == "HVDC_VFT", gen_prop[!, "UNIT_TYPE"])
-    @constraint(model, pg[vft_idx[1], :] .== -pg[vft_idx[2], :]) # VFT
+        vft_idx = findall(x -> x == "HVDC_VFT", genprop[!, "GEN_NAME"])
+        @constraint(model, pg[vft_idx[1], :] .== -pg[vft_idx[2], :]) # VFT
 
-    htp_idx = findall(x -> x == "HVDC_HTP", gen_prop[!, "UNIT_TYPE"])
-    @constraint(model, pg[htp_idx[1], :] .== -pg[htp_idx[2], :]) # HTP
+        htp_idx = findall(x -> x == "HVDC_HTP", genprop[!, "GEN_NAME"])
+        @constraint(model, pg[htp_idx[1], :] .== -pg[htp_idx[2], :]) # HTP
+    end
 
-    clean_path_idx = findall(x -> x == "HVDC_NYCleanPath", gen_prop[!, "UNIT_TYPE"])
-    @constraint(model, pg[clean_path_idx[1], :] .== -pg[clean_path_idx[2], :]) # CleanPath
+    if include_new_hvdc
+        clean_path_idx = findall(x -> x == "HVDC_NYCleanPath", genprop[!, "GEN_NAME"])
+        @constraint(model, pg[clean_path_idx[1], :] .== -pg[clean_path_idx[2], :]) # CleanPath
 
-    chp_express_idx = findall(x -> x == "HVDC_CHPexpress", gen_prop[!, "UNIT_TYPE"])
-    @constraint(model, pg[chp_express_idx[1], :] .== -pg[chp_express_idx[2], :]) # CHP Express
-
-    # @constraint(model, pg[end-4, :] .== -pg[end-1, :]) # ?????
+        chp_express_idx = findall(x -> x == "HVDC_CHPexpress", genprop[!, "GEN_NAME"])
+        @constraint(model, pg[chp_express_idx[1], :] .== -pg[chp_express_idx[2], :]) # CHP Express
+    end
 
     # Generator ramping constraints
     @constraint(model, -ramp_down[:, 2:nt] .<= pg[:, 2:nt] .- pg[:, 1:nt-1] .<= ramp_up[:, 2:nt])
 
     # Load shedding constraints
-    @constraint(model, 0.0 .<= load_shedding .<= max.(load, 0))
+    @constraint(model, 0.0 .<= load_shedding .<= max.(load_data, 0))
 
     # Extract generation for wind and calculate curtailment
-    wg = pg[wind_idx, :]
-    wc = wind_gen .- wg
+    wind_gen = pg[wind_idx, :]
+    wind_curt = Matrix(wind[:, sim_dates]) .- wind_gen
 
     # Extract generation for utility-scale solar (UPV) and calculate curtailment
-    sg = pg[solar_upv_idx, :]
-    sc = solar_upv_gen .- sg
+    solar_gen = pg[solar_upv_idx, :]
+    solar_curt = Matrix(solar_upv[:, sim_dates]) .- solar_gen
 
     # Objective function: Minimize load shedding and storage operation costs
-    @objective(model, Min, sum(load_shedding) + 0.05 * (sum(charge) + sum(discharge)))
+    @objective(model, Min, 10000 * sum(load_shedding) + (sum(charge) + sum(discharge)) + sum(gencost .* pg))
 
-    # SOLVE
+    # RUN IT
     optimize!(model)
 
-    # Check if the solver found an optimal solution
     if termination_status(model) == MOI.OPTIMAL
         # Extract results
-        pg_result = value.(pg)
-        flow_result = value.(flow)
-        charge_result = value.(charge)
-        discharge_result = value.(discharge)
-        batt_state_result = value.(batt_state)
-        load_shedding_result = value.(load_shedding)
-        wind_curtail_result = value.(wc)
-        solar_curtail_result = value.(sc)
+        pg_result = value.(pg);
+        flow_result = value.(flow);
+        charge_result = value.(charge);
+        discharge_result = value.(discharge);
+        batt_state_result = value.(batt_state);
+        load_shedding_result = value.(load_shedding);
+        wind_curtail_result = value.(wind_curt);
+        solar_curtail_result = value.(solar_curt);
     else
-        println("Optimization did not find an optimal solution for year $(year).")
+        println("Error with optimization")
     end
 
-    # Save results to files
-    if !isdir(out_path)
-        mkdir(out_path)
-    end
+    ### Save results to files
+    # Add bus/branch IDs and datetime to output files
+    flow_result = hcat([branchprop[:, "F_BUS"] branchprop[:, "FROM_ZONE"]], flow_result)
+    flow_result = hcat([branchprop[:, "T_BUS"] branchprop[:, "TO_ZONE"]], flow_result)
+    flow_result = vcat(hcat(["from_bus" "from_bus_zone" "to_bus" "to_bus_zone"], reshape(sim_dates, 1, :)), flow_result)
+
+    pg_result = hcat([genprop[:, "GEN_BUS"] map(x -> bus_to_zone[x], gen_prop[:, "GEN_BUS"])], pg_result)
+    pg_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), pg_result)
+
+    charge_result = hcat([storage_bus_ids map(x -> bus_to_zone[x], storage_bus_ids)], charge_result)
+    charge_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), charge_result)
+
+    discharge_result = hcat([storage_bus_ids map(x -> bus_to_zone[x], storage_bus_ids)], discharge_result)
+    discharge_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), discharge_result)
+
+    batt_state_result = hcat([storage_bus_ids map(x -> bus_to_zone[x], storage_bus_ids)], batt_state_result)
+    batt_state_result = vcat(hcat(["bus_id" "zone"], reshape(vcat(sim_dates, "end"), 1, :)), batt_state_result)
+
+    load_shedding_result = hcat([bus_ids map(x -> bus_to_zone[x], bus_ids)], load_shedding_result)
+    load_shedding_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), load_shedding_result)
+
+    wind_curtail_result = hcat([wind_bus_ids map(x -> bus_to_zone[x], wind_bus_ids)], wind_curtail_result)
+    wind_curtail_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), wind_curtail_result)
+
+    solar_curtail_result = hcat([solar_upv_bus_ids map(x -> bus_to_zone[x], solar_upv_bus_ids)], solar_curtail_result)
+    solar_curtail_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), solar_curtail_result)
+
+    # Also for load
+    load_data_out = hcat([bus_ids map(x -> bus_to_zone[x], bus_ids)], load_data)
+    load_data_out = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), load_data_out)
 
     # Save results as CSV files
     CSV.write("$(out_path)/gen_$(year).csv", DataFrame(pg_result, :auto), header=false)
     CSV.write("$(out_path)/flow_$(year).csv", DataFrame(flow_result, :auto), header=false)
     CSV.write("$(out_path)/charge_$(year).csv", DataFrame(charge_result, :auto), header=false)
-    CSV.write("$(out_path)/disch_$(year).csv", DataFrame(discharge_result, :auto), header=false)
+    CSV.write("$(out_path)/discharge_$(year).csv", DataFrame(discharge_result, :auto), header=false)
     CSV.write("$(out_path)/wind_curtailment_$(year).csv", DataFrame(wind_curtail_result, :auto), header=false)
     CSV.write("$(out_path)/solar_curtailment_$(year).csv", DataFrame(solar_curtail_result, :auto), header=false)
     CSV.write("$(out_path)/batt_state_$(year).csv", DataFrame(batt_state_result, :auto), header=false)
     CSV.write("$(out_path)/load_shedding_$(year).csv", DataFrame(load_shedding_result, :auto), header=false)
+    CSV.write("$(out_path)/residual_load_$(year).csv", DataFrame(load_data_out, :auto), header=false)
 end

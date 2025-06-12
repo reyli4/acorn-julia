@@ -166,6 +166,9 @@ def disaggregate_weekly_to_hourly(
         # Combine all plants
         final_df = pd.concat(result_dfs, ignore_index=True)
 
+    # Convert to UTC datetime
+    final_df["datetime"] = final_df["datetime"].dt.tz_localize("UTC")
+
     # Sort by plant and datetime
     final_df = final_df.set_index(["eia_id", "datetime"])
 

@@ -342,9 +342,6 @@ def duplicate_generators(
         )
         gen_row["GEN_NAME"] = f"{original_name}_DUP_{duplicate_count}"
 
-        # Add some randomness to avoid identical generators
-        gen_row["GEN_BUS"] = gen_row["GEN_BUS"] + 0.1 * duplicate_count
-
         new_generators.append(gen_row)
         added_capacity += gen_row["PMAX"]
 
