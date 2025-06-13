@@ -368,7 +368,7 @@ function run_model(
     flow_result = hcat([branchprop[:, "T_BUS"] branchprop[:, "TO_ZONE"]], flow_result)
     flow_result = vcat(hcat(["from_bus" "from_bus_zone" "to_bus" "to_bus_zone"], reshape(sim_dates, 1, :)), flow_result)
 
-    pg_result = hcat([genprop[:, "GEN_BUS"] map(x -> bus_to_zone[x], gen_prop[:, "GEN_BUS"])], pg_result)
+    pg_result = hcat([genprop[:, "GEN_BUS"] map(x -> bus_to_zone[x], genprop[:, "GEN_BUS"])], pg_result)
     pg_result = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), pg_result)
 
     charge_result = hcat([storage_bus_ids map(x -> bus_to_zone[x], storage_bus_ids)], charge_result)
@@ -394,13 +394,13 @@ function run_model(
     load_data_out = vcat(hcat(["bus_id" "zone"], reshape(sim_dates, 1, :)), load_data_out)
 
     # Save results as CSV files
-    CSV.write("$(out_path)/gen_$(year).csv", DataFrame(pg_result, :auto), header=false)
-    CSV.write("$(out_path)/flow_$(year).csv", DataFrame(flow_result, :auto), header=false)
-    CSV.write("$(out_path)/charge_$(year).csv", DataFrame(charge_result, :auto), header=false)
-    CSV.write("$(out_path)/discharge_$(year).csv", DataFrame(discharge_result, :auto), header=false)
-    CSV.write("$(out_path)/wind_curtailment_$(year).csv", DataFrame(wind_curtail_result, :auto), header=false)
-    CSV.write("$(out_path)/solar_curtailment_$(year).csv", DataFrame(solar_curtail_result, :auto), header=false)
-    CSV.write("$(out_path)/batt_state_$(year).csv", DataFrame(batt_state_result, :auto), header=false)
-    CSV.write("$(out_path)/load_shedding_$(year).csv", DataFrame(load_shedding_result, :auto), header=false)
+    CSV.write("$(out_path)/gen_$(sim_year).csv", DataFrame(pg_result, :auto), header=false)
+    CSV.write("$(out_path)/flow_$(sim_year).csv", DataFrame(flow_result, :auto), header=false)
+    CSV.write("$(out_path)/charge_$(sim_year).csv", DataFrame(charge_result, :auto), header=false)
+    CSV.write("$(out_path)/discharge_$(sim_year).csv", DataFrame(discharge_result, :auto), header=false)
+    CSV.write("$(out_path)/wind_curtailment_$(sim_year).csv", DataFrame(wind_curtail_result, :auto), header=false)
+    CSV.write("$(out_path)/solar_curtailment_$(sim_year).csv", DataFrame(solar_curtail_result, :auto), header=false)
+    CSV.write("$(out_path)/batt_state_$(sim_year).csv", DataFrame(batt_state_result, :auto), header=false)
+    CSV.write("$(out_path)/load_shedding_$(sim_year).csv", DataFrame(load_shedding_result, :auto), header=false)
     CSV.write("$(out_path)/residual_load_$(year).csv", DataFrame(load_data_out, :auto), header=false)
 end

@@ -97,7 +97,7 @@ def read_all_wtk(
     df_all : pd.DataFrame
         DataFrame containing the merged data
     """
-    wtk_files = glob(f"{nrel_wtk_path}/techno-economic/met_data/*.nc")
+    wtk_files = glob(f"{nrel_wtk_path}/met_data/*.nc")
 
     df_all = []
 

@@ -1,8 +1,36 @@
 import geopandas as gpd
 import pandas as pd
 import salem
+import numpy as np
+from glob import glob
 
-from python.utils import project_path
+from python.utils import project_path, tgw_path
+
+
+def generate_tgw_filelist(climate_scenario_years: str, years="all"):
+    """
+    Get list of TGW climate data
+    """
+    # Get info
+    climate_scenario, year_start, year_end = climate_scenario_years.split("_")
+
+    if years == "all":
+        climate_paths = np.sort(
+            glob(
+                f"{tgw_path}/{climate_scenario_years}/hourly/tgw_wrf_{climate_scenario}_hourly_*.nc"
+            )
+        )
+    else:
+        climate_paths = np.sort(
+            [
+                glob(
+                    f"{tgw_path}/{climate_scenario_years}/hourly/tgw_wrf_{climate_scenario}_hourly_{year}*.nc"
+                )
+                for year in range(int(years[0]), 1 + int(years[1]))
+            ]
+        ).flatten()
+
+    return climate_paths
 
 
 def tgw_to_zones(
