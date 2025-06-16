@@ -13,4 +13,4 @@ See the following files for more information on the model construction and data 
 - [Load modeling](docs/load_modeling.md)
 - Solar + wind modeling
 - [Coupling with GenX](docs/coupling_to_GenX.md) (including hydro, natural gas, nuclear matching)
-- Future work
+- [Future work](docs/todo.md)
