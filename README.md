@@ -12,5 +12,5 @@ See the following files for more information on the model construction and data 
 - [ACORN](docs/acorn.md)
 - [Load modeling](docs/load_modeling.md)
 - Solar + wind modeling
-- [Coupling with GenX](docs/coupling_to_genX.md) (including hydro, natural gas, nuclear matching)
+- [Coupling with GenX](docs/coupling_to_GenX.md) (including hydro, natural gas, nuclear matching)
 - Future work
