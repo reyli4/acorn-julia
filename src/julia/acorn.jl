@@ -7,7 +7,7 @@ using Gurobi
 include("./utils.jl")
 
 
-function run_model(
+function run_acorn(
     run_name,
     climate_scenario,
     sim_year,
@@ -17,13 +17,14 @@ function run_model(
     save_name,
     exclude_external_zones=true,
     include_new_hvdc=false,
-    storage_eff=0.75,
-    data_directory="/home/fs01/dcl257/projects/acorn-julia/data")
+    storage_eff=0.75
+    )
 
     ############################
     # Read all data
     ############################
-    run_directory = "/home/fs01/dcl257/projects/acorn-julia/runs/$(run_name)"
+    data_directory = "$(project_path)/data"
+    run_directory = "$(project_path)/runs/$(run_name)"
     out_path = "$(run_directory)/outputs/$(climate_scenario)/$(save_name)"
     
     if !isdir(out_path)
@@ -402,5 +403,5 @@ function run_model(
     CSV.write("$(out_path)/solar_curtailment_$(sim_year).csv", DataFrame(solar_curtail_result, :auto), header=false)
     CSV.write("$(out_path)/batt_state_$(sim_year).csv", DataFrame(batt_state_result, :auto), header=false)
     CSV.write("$(out_path)/load_shedding_$(sim_year).csv", DataFrame(load_shedding_result, :auto), header=false)
-    CSV.write("$(out_path)/residual_load_$(year).csv", DataFrame(load_data_out, :auto), header=false)
+    CSV.write("$(out_path)/residual_load_$(sim_year).csv", DataFrame(load_data_out, :auto), header=false)
 end

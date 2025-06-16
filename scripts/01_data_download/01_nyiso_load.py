@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import date
 import matplotlib.pyplot as plt
+from python.utils import project_path
 
 """
 This script downloads and processes historical load data from NYISO. The data is
@@ -23,12 +24,9 @@ NOTE: Time index is in local time (EST/EDT) and not UTC.
 ###########################
 ## Preliminaries
 ###########################
-# Define project root directory
-base_dir = "/Users/dcl257/Projects/current_projects/nys-clcpa-2050"
-
 # Define the base URL and destination folder
 base_url = "http://mis.nyiso.com/public/csv/palIntegrated/"
-data_folder = f"{base_dir}/data/nyiso/historical_load"
+data_folder = f"{project_path}/data/nyiso/historical_load"
 
 # Create the relevant folders
 os.makedirs(data_folder, exist_ok=True)
@@ -77,7 +75,8 @@ def process_load_file(file_path):
 
     # Read the CSV file
     df = pd.read_csv(
-        file_path, dtype={"Time Stamp": str, "Name": str, "PTID": str, "Integrated Load": float}
+        file_path,
+        dtype={"Time Stamp": str, "Name": str, "PTID": str, "Integrated Load": float},
     )
 
     # Replace missing values in the Load column with 0.0 before processing
@@ -122,10 +121,14 @@ def process_load_file(file_path):
     )
 
     # Combine all rows
-    transformed_rows = pd.concat([nyc_rows, longisland_rows, other_rows], ignore_index=True)
+    transformed_rows = pd.concat(
+        [nyc_rows, longisland_rows, other_rows], ignore_index=True
+    )
 
     # Calculate hourly averages and group by "Hourly Time" and "zone"
-    df_hourly = transformed_rows.groupby(["time", "zone"])["load_MW"].mean().reset_index()
+    df_hourly = (
+        transformed_rows.groupby(["time", "zone"])["load_MW"].mean().reset_index()
+    )
 
     return df_hourly
 
@@ -241,14 +244,22 @@ def plot_historical_loads(year):
 
     # Add hour of year column based on month, day, hour
     percentiles["HourOfYear"] = (
-        (percentiles["Month"] - 1) * 30 * 24 + (percentiles["Day"] - 1) * 24 + percentiles["Hour"]
+        (percentiles["Month"] - 1) * 30 * 24
+        + (percentiles["Day"] - 1) * 24
+        + percentiles["Hour"]
     )
 
     # Plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 6))
     percentiles.sort_values("HourOfYear").plot(
         x="HourOfYear",
-        y=["Min_Load_GW", "q01_Load_GW", "Median_Load_GW", "q99_Load_GW", "Max_Load_GW"],
+        y=[
+            "Min_Load_GW",
+            "q01_Load_GW",
+            "Median_Load_GW",
+            "q99_Load_GW",
+            "Max_Load_GW",
+        ],
         title="Percentiles of Load Profile",
         xlabel="Hour of Year",
         ylabel="Load (GW)",

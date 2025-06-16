@@ -13,7 +13,11 @@
 
 echo "Job started on `hostname` at `date`"
 
-cd /home/fs01/dcl257/projects/acorn-julia/data/nrel/wtk
+############################
+# Speicify save path
+OUT_DIR="/home/fs01/dcl257/projects/acorn-julia/data/nrel/wtk"
+############################
+cd $OUT_DIR
 
 PREFIX="https://nrel-pds-wtk.s3.amazonaws.com/wtk-techno-economic/pywtk-data/met_data"
 SAVE_DIR="met_data"
