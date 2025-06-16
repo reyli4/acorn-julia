@@ -212,7 +212,6 @@ class MultiZoneLoadPredictor:
         y = y.loc[data.index]
 
         # Train/test split - using chronological split for time series data
-        # Train/test split - using chronological split for time series data
         if type(test_split) is float:
             split_idx = int(len(X) * (1 - test_split))
             X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]

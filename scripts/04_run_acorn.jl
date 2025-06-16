@@ -82,10 +82,20 @@ println("  Include new HVDC: $(include_new_hvdc)")
 println("  Save name: $(save_name)")
 flush(stdout)  # Force output to appear immediately
 
+exclude_external_zones_bool = convert(Bool, exclude_external_zones)
+include_new_hvdc_bool = convert(Bool, include_new_hvdc)
+
 # Loop through years and run model
 for sim_year in sim_years[1]:sim_years[2]
     println("Now running year $(sim_year)...")
     flush(stdout)
+    # Check if run already exists
+    if isfile("$(run_dir)/outputs/$(climate_scenario_years)/$(save_name)/load_shedding_$(sim_year).csv")
+        println("Run already exists, skipping...")
+        continue
+    end
+
+    # Run ACORN
     run_acorn(
         run_name,
         climate_scenario_years,
@@ -93,6 +103,8 @@ for sim_year in sim_years[1]:sim_years[2]
         branchprop_name,
         busprop_name,
         if_lim_name,
-        save_name,
+        save_name;
+        exclude_external_zones=exclude_external_zones_bool,
+        include_new_hvdc=include_new_hvdc_bool,
     )
 end

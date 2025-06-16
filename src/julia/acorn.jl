@@ -14,7 +14,7 @@ function run_acorn(
     branchprop_name,
     busprop_name,
     if_lim_name,
-    save_name,
+    save_name;
     exclude_external_zones=true,
     include_new_hvdc=false,
     storage_eff=0.75
@@ -108,6 +108,8 @@ function run_acorn(
 
     if !exclude_external_zones
         if include_new_hvdc
+            genprop = add_hvdc_generators(genprop, true)
+        else
             genprop = add_hvdc_generators(genprop, false)
         end
     end
