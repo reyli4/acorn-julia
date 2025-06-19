@@ -11,6 +11,6 @@ Paths to data/code are somewhat self-contained -- you will need to update the pa
 See the following files for more information on the model construction and data processing: 
 - [ACORN](docs/acorn.md)
 - [Load modeling](docs/load_modeling.md)
-- Solar + wind modeling
+- [Solar + wind modeling](docs/gen_modeling.md)
 - [Coupling with GenX](docs/coupling_to_GenX.md) (including hydro, natural gas, nuclear matching)
 - [Future work](docs/todo.md)
