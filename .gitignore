@@ -9,6 +9,6 @@ out/
 runs/*/logs/
 runs/*/inputs/
 runs/*/outputs/
-sandbox_julia.ipynb
-sandbox_python.ipynb
+julia_sandbox.ipynb
+python_sandbox.ipynb
 build/
