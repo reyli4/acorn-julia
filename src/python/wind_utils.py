@@ -13,7 +13,6 @@ import math
 from shapely.geometry import Point
 
 from python.utils import (
-    nrel_wtk_path,
     merge_to_zones,
     project_path,
     zone_names,
@@ -78,10 +77,9 @@ def fill_missing_zones(
 def read_all_wtk(
     keep_every=10,
     vars_to_keep=["wind_speed", "power"],
-    nrel_wtk_path: str = nrel_wtk_path,
 ):
     """
-    Read all WTK data from the given path.
+    Read all WTK data.
 
     Parameters:
     -----------
@@ -89,15 +87,13 @@ def read_all_wtk(
         Every nth WTK location to keep
     vars_to_keep : list, optional
         Variables to keep
-    nrel_wtk_path : str, optional
-        Path to the NREL WTK data
 
     Returns:
     --------
     df_all : pd.DataFrame
         DataFrame containing the merged data
     """
-    wtk_files = glob(f"{nrel_wtk_path}/met_data/*.nc")
+    wtk_files = glob(f"{project_path}/data/nrel/wtk/met_data/*.nc")
 
     df_all = []
 

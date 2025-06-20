@@ -11,7 +11,7 @@ import xarray as xr
 from scipy.optimize import minimize_scalar
 
 from python.utils import (
-    nrel_sind_path,
+    project_path,
     nearest_neighbor_lat_lon,
     zone_names,
     month_keys,
@@ -21,9 +21,9 @@ from python.utils import (
 
 def read_all_sind():
     """
-    Read all SIND data from the `nrel_sind_path`.
+    Read all SIND data from NREL SIND.
     """
-    sind_files = glob(f"{nrel_sind_path}/ny-pv-2006/Actual_*.csv")
+    sind_files = glob(f"{project_path}/data/nrel/sind/ny-pv-2006/Actual_*.csv")
 
     df_all = []
 
