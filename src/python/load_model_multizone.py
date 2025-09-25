@@ -605,6 +605,39 @@ class MultiZoneLoadPredictor:
         temp_data = temp_data.copy()
         temp_data["time"] = pd.to_datetime(temp_data["time"])
         temp_data = temp_data.rename(columns={"time": "datetime"})
+        # --- normalize columns so pivot always finds 'datetime','zone', and temp_varname ---
+        temp_data.columns = temp_data.columns.astype(str).str.strip()
+
+        # Accept ZONE/zone/region/etc.
+        if "zone" not in temp_data.columns:
+            for c in ["ZONE", "zone_id", "region", "REGION", "area", "subregion", "load_zone", "zone_name"]:
+                if c in temp_data.columns:
+                    temp_data = temp_data.rename(columns={c: "zone"})
+                    break
+
+        # If still no 'zone', assume WIDE format like T2C_A, T2C_B ... -> melt to LONG
+        if "zone" not in temp_data.columns:
+            id_col = "datetime"
+            value_cols = [c for c in temp_data.columns if c != id_col]
+            long = temp_data.melt(id_vars=[id_col], value_vars=value_cols, var_name="zone", value_name=temp_varname)
+            # strip prefixes like 'T2C_' or 'T2C-' from the melted 'zone' names
+            long["zone"] = long["zone"].astype(str).str.replace(fr"^{temp_varname}[_-]?", "", regex=True)
+            temp_data = long
+
+        # Ensure the temp column has the exact name temp_varname (case-insensitive fallback)
+        if temp_varname not in temp_data.columns:
+            for c in temp_data.columns:
+                if c.lower() == str(temp_varname).lower():
+                    temp_data = temp_data.rename(columns={c: temp_varname})
+                    break
+
+        # Final sanity
+        required = {"datetime", "zone", temp_varname}
+        missing = required - set(temp_data.columns)
+        if missing:
+            raise KeyError(f"Missing required columns {missing}; have {list(temp_data.columns)}")
+# --- end normalization ---
+
 
         # Pivot temperature data to wide format
         temp_data_wide = temp_data.pivot_table(

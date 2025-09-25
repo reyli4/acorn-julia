@@ -1,14 +1,30 @@
-.ipynb_checkpoints/
-__pycache__/
-*.egg-info/
-data/climate/
-data/nrel/
-data/hydro/
-data/load/
-out/
-runs/*/logs/
-runs/*/inputs/
-runs/*/outputs/
-julia_sandbox.ipynb
-python_sandbox.ipynb
-build/
+# === Large/generated (ignored) ===
+data/
+runs/
+inputs/
+*.parquet
+*.csv
+
+# --- Keep small artifacts for comparison (override ignores) ---
+!runs/*/outputs/*/run_manifest.json
+!runs/*/outputs/*/metrics.json
+!runs/*/outputs/*/summary_*.csv
+!runs/*/figs/*.pdf
+!runs/*/figs/*.png
+
+# Notebooks cache
+*.ipynb_checkpoints/
+
+# Logs (usually ignore)
+*.log
+*.out
+*.err
+
+# Env / OS
+.env
+.DS_Store
+
+# Sensitive licenses/keys
+*.lic
+*.key
+*.pem

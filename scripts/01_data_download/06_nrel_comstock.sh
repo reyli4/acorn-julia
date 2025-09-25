@@ -27,7 +27,7 @@ BUILDING_TYPES=(
 )
 
 # Create output directory
-OUTPUT_DIR="/home/fs01/dcl257/projects/acorn-julia/data/nrel/comstock"
+OUTPUT_DIR="/home/fs01/jl2966/acorn-julia/data/nrel/comstock"
 mkdir -p "$OUTPUT_DIR"
 
 echo "Starting download of NREL commercial building stock data..."

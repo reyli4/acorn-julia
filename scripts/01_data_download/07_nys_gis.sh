@@ -1,22 +1,20 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-#####################################
-# Download NYS county shapefile
-# Taken from census.gov
-# URL: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html
-#####################################
-# Base URL
-BASE_URL="https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+OUT="$PROJECT/data/nys_gis"
+mkdir -p "$OUT"
 
-# Output directory
-OUTPUT_DIR="/home/fs01/dcl257/projects/acorn-julia/data/nys/"
-mkdir -p "$OUTPUT_DIR"
+URL="https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip"
 
-# Download
-wget -q --show-progress -P "$OUTPUT_DIR" "$BASE_URL"
+TMP="$(mktemp)"
+echo "Downloading $URL..."
+curl -fsSL "$URL" -o "$TMP"
 
-# Unzip
-unzip "$OUTPUT_DIR/cb_2018_us_county_5m.zip" -d "$OUTPUT_DIR/gis"
+echo "Unzipping into $OUT..."
+unzip -o "$TMP" -d "$OUT" >/dev/null
 
-# Remove zip file
-rm "$OUTPUT_DIR/cb_2018_us_county_5m.zip"
+rm -f "$TMP"
+echo "✔ Done. Files in $OUT:"
+ls -lah "$OUT"

@@ -1,0 +1,42 @@
+#!/bin/bash
+#SBATCH --job-name=preproc_loads
+#SBATCH --account=vs498_0001        # <- your fcode/account (change if needed)
+#SBATCH --time=08:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --output=logs/preproc.%j.out
+#SBATCH --error=logs/preproc.%j.err
+
+set -euo pipefail
+
+PROJECT_DIR="$HOME/acorn-julia"
+SCEN="runs/low_RE_high_elec_iter0"   # change if you use another scenario
+
+# Load Python env
+module purge
+source "$HOME/opt/miniconda3/etc/profile.d/conda.sh"
+conda activate acorn-py39
+
+# Repo code on PYTHONPATH + ensure dirs exist
+export PYTHONPATH="$PROJECT_DIR/src:$PYTHONPATH"
+mkdir -p "$PROJECT_DIR/logs" \
+         "$PROJECT_DIR/data/climate/tgw" \
+         "$PROJECT_DIR/$SCEN/inputs"
+
+cd "$PROJECT_DIR"
+
+# 1) Baseline (builds zonal temps, etc.)
+jupyter nbconvert --to notebook --inplace --ExecutePreprocessor.timeout=86400 \
+  --execute scripts/02_load_modeling/01_baseline.ipynb
+
+# 2) Resstock
+jupyter nbconvert --to notebook --inplace --ExecutePreprocessor.timeout=86400 \
+  --execute scripts/02_load_modeling/02_resstock.ipynb
+
+# 3) Comstock
+jupyter nbconvert --to notebook --inplace --ExecutePreprocessor.timeout=86400 \
+  --execute scripts/02_load_modeling/03_comstock.ipynb
+
+# 4) Assemble scenario inputs
+jupyter nbconvert --to notebook --inplace --ExecutePreprocessor.timeout=86400 \
+  --execute "$SCEN/construct_inputs.ipynb"

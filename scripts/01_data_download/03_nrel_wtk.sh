@@ -15,7 +15,7 @@ echo "Job started on `hostname` at `date`"
 
 ############################
 # Speicify save path
-OUT_DIR="/home/fs01/dcl257/projects/acorn-julia/data/nrel/wtk"
+OUT_DIR="/home/fs01/jl2966/acorn-julia/data/nrel/wtk"
 ############################
 cd $OUT_DIR
 

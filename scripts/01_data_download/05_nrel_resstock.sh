@@ -18,7 +18,7 @@ UNIT_TYPES=(
 )
 
 # Create output directory
-OUTPUT_DIR="/home/fs01/dcl257/projects/acorn-julia/data/nrel/resstock"
+OUTPUT_DIR="/home/fs01/jl2966/acorn-julia/data/nrel/resstock"
 mkdir -p "$OUTPUT_DIR"
 
 echo "Starting download of NREL building stock data..."

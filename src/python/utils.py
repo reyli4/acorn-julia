@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import random
 from sklearn.neighbors import BallTree
@@ -7,7 +8,8 @@ import pandas as pd
 #############
 # Paths
 #############
-project_path = "/home/fs01/dcl257/projects/acorn-julia"
+from pathlib import Path
+project_path = os.getenv('ACORN_PROJECT_PATH', '/home/fs01/jl2966/acorn-julia')
 tgw_path = "/home/shared/vs498_0001/im3_hyperfacets_tgw"
 
 #############
