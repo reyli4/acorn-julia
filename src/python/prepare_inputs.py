@@ -520,3 +520,39 @@ def generate_seasonal_storage_sites(
             repeated_gdf[col] = repeated_gdf[col] / sites_per_zone
 
     return repeated_gdf
+
+
+def create_zone_a_seasonal_storage(
+    df_genX,
+    zone_a_buses=[54, 55, 56, 57, 58, 59, 60, 61],  # Zone A bus IDs
+    power_capacity_MW=200.0,
+    energy_capacity_mwh=20000.0  # Much larger for seasonal storage
+):
+    """
+    Create Zone A focused seasonal storage based on professor's notes:
+    "Zone A appropriate" and "usually zone near renewable"
+    """
+    # Filter for Zone A buses
+    zone_a_storage = pd.DataFrame({
+        'bus_id': zone_a_buses,
+        'charge_capacity_MW': [power_capacity_MW] * len(zone_a_buses),
+        'storage_capacity_mwh': [energy_capacity_mwh] * len(zone_a_buses)
+    })
+    
+    return zone_a_storage
+
+
+def analyze_usage_frequency(storage_results, threshold=0.5):
+    """
+    Analyze if storage is used too often based on professor's note:
+    "see if its used too often"
+    """
+    usage_frequency = storage_results['total_usage'] / storage_results['total_capacity']
+    
+    over_usage = usage_frequency > threshold
+    
+    return {
+        'usage_frequency': usage_frequency,
+        'over_usage': over_usage,
+        'threshold': threshold
+    }

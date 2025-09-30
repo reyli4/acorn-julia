@@ -5,6 +5,7 @@ using JuMP
 using Gurobi
 
 include("./utils.jl")
+include("./scenario_framework.jl")
 
 
 function run_acorn(
@@ -279,6 +280,18 @@ function run_acorn(
         # # Battery state dynamics Gilboa
         # @constraint(model, batt_state[end, t+1] .== batt_state[end, t] .+ sqrt(gilboa_eff) .* charge[end, t] .- (1 / sqrt(gilboa_eff)) .* discharge[end, t])
     end
+    
+    # Battery degradation/disincentive modeling
+    # Track usage frequency to penalize over-usage (fluctuation disincentive)
+    @variable(model, battery_usage[1:length(storage_bus_ids), 1:nt])
+    @constraint(model, battery_usage .== charge .+ discharge)  # Total usage per time step
+    
+    # Usage frequency penalty - discourage constant charging/discharging
+    usage_frequency_penalty = 0.1  # Penalty factor for over-usage
+    @variable(model, usage_penalty[1:length(storage_bus_ids)])
+    for i in 1:length(storage_bus_ids)
+        @constraint(model, usage_penalty[i] >= sum(battery_usage[i, :]) - 0.5 * nt)  # Penalty if usage > 50% of time
+    end
 
     # Battery capacity constraints
     @constraint(model, 0.0 .* storage_energy_cap .<= batt_state .<= storage_energy_cap)
@@ -409,7 +422,11 @@ function run_acorn(
     if !isempty(seasonal_storage_bus_ids)
         seasonal_storage_cost = sum(seasonal_charge) + sum(seasonal_discharge)
     end
-    @objective(model, Min, 10000 * sum(load_shedding) + (sum(charge) + sum(discharge)) + seasonal_storage_cost + sum(gencost .* pg))
+    
+    # Include usage frequency penalty to discourage over-usage
+    usage_penalty_cost = usage_frequency_penalty * sum(usage_penalty)
+    
+    @objective(model, Min, 10000 * sum(load_shedding) + (sum(charge) + sum(discharge)) + seasonal_storage_cost + usage_penalty_cost + sum(gencost .* pg))
 
     # RUN IT
     optimize!(model)
