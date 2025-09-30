@@ -9,6 +9,8 @@ from python.utils import project_path
 def resource_mapping(resource):
     if "battery" in resource:
         return "battery"
+    elif "seasonal_storage" in resource or "seasonalstorage" in resource:
+        return "seasonal_storage"
     elif "biomass" in resource:
         return "biomass"
     elif "hydroelectric" in resource and "storage" in resource:
@@ -469,3 +471,88 @@ def match_ng_capacity(
     )
 
     return df_modified
+
+
+def generate_seasonal_storage_sites(
+    df_genX,
+    sites_per_zone=1,
+    columns_to_scale=["EndCap", "EndEnergyCap"],
+):
+    """
+    Generate seasonal storage sites by creating random points in each target zone.
+    Seasonal storage has different characteristics than regular battery storage:
+    - Much larger energy capacity (seasonal scale)
+    - Different power-to-energy ratios
+    - Typically located near renewable resources
+    """
+    # Read NYISO GDF
+    nyiso_gdf = gpd.read_file(
+        f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp"
+    )
+
+    # Merge dataframes
+    gdf = pd.merge(
+        nyiso_gdf,
+        df_genX,
+        left_on="zone",
+        right_on="genX_zone",
+    )
+
+    # If only one point per zone, use original approach
+    if sites_per_zone == 1:
+        gdf["geometry"] = gdf.geometry.sample_points(1)
+        gdf["latitude"] = gdf["geometry"].apply(lambda p: p.y)
+        gdf["longitude"] = gdf["geometry"].apply(lambda p: p.x)
+        return gdf
+
+    # For multiple points, repeat rows and sample points
+    # Repeat each row sites_per_zone times
+    repeated_gdf = gdf.loc[gdf.index.repeat(sites_per_zone)].reset_index(drop=True)
+
+    # Sample one point per row since we've already duplicated the rows
+    repeated_gdf["geometry"] = repeated_gdf.geometry.sample_points(1)
+    repeated_gdf["latitude"] = repeated_gdf["geometry"].apply(lambda p: p.y)
+    repeated_gdf["longitude"] = repeated_gdf["geometry"].apply(lambda p: p.x)
+
+    # Split EndCap and EndEnergyCap
+    if sites_per_zone > 1.0:
+        for col in columns_to_scale:
+            repeated_gdf[col] = repeated_gdf[col] / sites_per_zone
+
+    return repeated_gdf
+
+
+def create_zone_a_seasonal_storage(
+    df_genX,
+    zone_a_buses=[54, 55, 56, 57, 58, 59, 60, 61],  # Zone A bus IDs
+    power_capacity_MW=200.0,
+    energy_capacity_mwh=20000.0  # Much larger for seasonal storage
+):
+    """
+    Create Zone A focused seasonal storage based on professor's notes:
+    "Zone A appropriate" and "usually zone near renewable"
+    """
+    # Filter for Zone A buses
+    zone_a_storage = pd.DataFrame({
+        'bus_id': zone_a_buses,
+        'charge_capacity_MW': [power_capacity_MW] * len(zone_a_buses),
+        'storage_capacity_mwh': [energy_capacity_mwh] * len(zone_a_buses)
+    })
+    
+    return zone_a_storage
+
+
+def analyze_usage_frequency(storage_results, threshold=0.5):
+    """
+    Analyze if storage is used too often based on professor's note:
+    "see if its used too often"
+    """
+    usage_frequency = storage_results['total_usage'] / storage_results['total_capacity']
+    
+    over_usage = usage_frequency > threshold
+    
+    return {
+        'usage_frequency': usage_frequency,
+        'over_usage': over_usage,
+        'threshold': threshold
+    }
