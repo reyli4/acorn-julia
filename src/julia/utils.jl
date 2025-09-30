@@ -216,6 +216,71 @@ function add_wind_generators(genprop, wind_bus_ids)
 end
 
 ##############################################
+# Seasonal Storage utils
+##############################################
+
+function add_seasonal_storage_generators(genprop, seasonal_storage_bus_ids)
+    """
+    Add seasonal storage as generators (for modeling purposes)
+    Seasonal storage has different characteristics than regular batteries:
+    - Higher efficiency (95% vs 75%)
+    - Larger capacity
+    - Different cost structure
+    """
+    seasonal_storage = similar(genprop, length(seasonal_storage_bus_ids))
+
+    seasonal_storage[:, 1] .= "Seasonal Storage" # Generator name
+    seasonal_storage[:, 2] .= 2 # Model (not important)
+    seasonal_storage[:, 3] .= 0.0 # Startup
+    seasonal_storage[:, 4] .= 0 # Shutdown
+    seasonal_storage[:, 5] .= 2 # NCOST
+    seasonal_storage[:, 6] .= 0.0 # COST_1 (lower cost than regular storage)
+    seasonal_storage[:, 7] .= 0.0 # COST_0
+    seasonal_storage[:, 8] .= seasonal_storage_bus_ids # Bus number
+    seasonal_storage[:, 9] .= 0 # Pg
+    seasonal_storage[:, 10] .= 0 # Qg
+    seasonal_storage[:, 11] .= 9999 # Qmax
+    seasonal_storage[:, 12] .= -9999 # Qmin
+    seasonal_storage[:, 13] .= 1 # Vg
+    seasonal_storage[:, 14] .= 100 # mBase
+    seasonal_storage[:, 15] .= 1 # status
+    seasonal_storage[:, 16] .= 0 # Pmax
+    seasonal_storage[:, 17] .= 0 # Pmin
+    seasonal_storage[:, 18] .= 0 # Pc1
+    seasonal_storage[:, 19] .= 0 # Pc2
+    seasonal_storage[:, 20] .= 0 # Qc1min
+    seasonal_storage[:, 21] .= 0 # Qc1max
+    seasonal_storage[:, 22] .= 0 # Qc2min
+    seasonal_storage[:, 23] .= 0 # Qc2max
+    seasonal_storage[:, 24] .= 9999 # ramp rate for load following/AGC
+    seasonal_storage[:, 25] .= 9999 # ramp rate for 10 minute reserves
+    seasonal_storage[:, 26] .= 9999 # ramp rate for 30 minute reserves
+    seasonal_storage[:, 27] .= 0 # ramp rate for reactive power
+    seasonal_storage[:, 28] .= 0 # area participation factor
+    seasonal_storage[:, 29] .= "NA" # zone
+    seasonal_storage[:, 30] .= "SeasonalStorage" # generation type
+    seasonal_storage[:, 31] .= "SeasonalStorage" # fuel type
+    seasonal_storage[:, 32] .= 2 # CMT_KEY
+    seasonal_storage[:, 33] .= 0 # MIN_UP_TIME
+    seasonal_storage[:, 34] .= 0 # MIN_DOWN_TIME
+
+    # Append to genprop
+    return vcat(genprop, seasonal_storage)
+end
+
+function create_seasonal_storage_assignment(seasonal_storage_bus_ids, charge_capacity_MW, storage_capacity_mwh)
+    """
+    Create seasonal storage assignment DataFrame
+    """
+    seasonal_storage = DataFrame(
+        bus_id = seasonal_storage_bus_ids,
+        charge_capacity_MW = charge_capacity_MW,
+        storage_capacity_mwh = storage_capacity_mwh
+    )
+    return seasonal_storage
+end
+
+##############################################
 # Load utils
 ##############################################
 

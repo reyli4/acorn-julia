@@ -9,6 +9,8 @@ from python.utils import project_path
 def resource_mapping(resource):
     if "battery" in resource:
         return "battery"
+    elif "seasonal_storage" in resource or "seasonalstorage" in resource:
+        return "seasonal_storage"
     elif "biomass" in resource:
         return "biomass"
     elif "hydroelectric" in resource and "storage" in resource:
@@ -469,3 +471,52 @@ def match_ng_capacity(
     )
 
     return df_modified
+
+
+def generate_seasonal_storage_sites(
+    df_genX,
+    sites_per_zone=1,
+    columns_to_scale=["EndCap", "EndEnergyCap"],
+):
+    """
+    Generate seasonal storage sites by creating random points in each target zone.
+    Seasonal storage has different characteristics than regular battery storage:
+    - Much larger energy capacity (seasonal scale)
+    - Different power-to-energy ratios
+    - Typically located near renewable resources
+    """
+    # Read NYISO GDF
+    nyiso_gdf = gpd.read_file(
+        f"{project_path}/data/nyiso/gis/NYISO_Load_Zone_Dissolved.shp"
+    )
+
+    # Merge dataframes
+    gdf = pd.merge(
+        nyiso_gdf,
+        df_genX,
+        left_on="zone",
+        right_on="genX_zone",
+    )
+
+    # If only one point per zone, use original approach
+    if sites_per_zone == 1:
+        gdf["geometry"] = gdf.geometry.sample_points(1)
+        gdf["latitude"] = gdf["geometry"].apply(lambda p: p.y)
+        gdf["longitude"] = gdf["geometry"].apply(lambda p: p.x)
+        return gdf
+
+    # For multiple points, repeat rows and sample points
+    # Repeat each row sites_per_zone times
+    repeated_gdf = gdf.loc[gdf.index.repeat(sites_per_zone)].reset_index(drop=True)
+
+    # Sample one point per row since we've already duplicated the rows
+    repeated_gdf["geometry"] = repeated_gdf.geometry.sample_points(1)
+    repeated_gdf["latitude"] = repeated_gdf["geometry"].apply(lambda p: p.y)
+    repeated_gdf["longitude"] = repeated_gdf["geometry"].apply(lambda p: p.x)
+
+    # Split EndCap and EndEnergyCap
+    if sites_per_zone > 1.0:
+        for col in columns_to_scale:
+            repeated_gdf[col] = repeated_gdf[col] / sites_per_zone
+
+    return repeated_gdf
